@@ -709,7 +709,7 @@ func TestIntegration_MRDScaleUpConnections(t *testing.T) {
 		// Wait for all reads to complete.
 		reader.Wait()
 
-		if manager.sessionIDCounter != manager.params.maxConnections {
+		if manager.streamIDCounter != manager.params.maxConnections {
 			t.Fatalf("Manager did not scale up to maxConnections; got %d, want %d", len(manager.streams), manager.params.maxConnections)
 		}
 		if err = reader.Close(); err != nil {
