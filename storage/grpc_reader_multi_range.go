@@ -175,7 +175,8 @@ func (c *grpcStorageClient) NewMultiRangeDownloader(ctx context.Context, params 
 	}
 
 	// Blocking call to establish the first session and get attributes.
-	initialStreamID := 0
+	initialStreamID := manager.sessionIDCounter
+	manager.sessionIDCounter++
 	session, finalSpec, err := manager.createNewSession(initialStreamID, readSpec, true)
 	if err != nil {
 		manager.setPermanentError(err)
@@ -347,7 +348,7 @@ type multiRangeDownloaderManager struct {
 	callbackWg         sync.WaitGroup
 	streamCreating     bool
 	streamPicker       streamPickerStrategy
-	sessionIDCounter   int64
+	sessionIDCounter   int
 	streams            map[int]*mrdStream
 	unsentRequests     *requestQueue
 	addStreams         chan mrdCommand
@@ -579,8 +580,8 @@ func (m *multiRangeDownloaderManager) eventLoop() {
 
 func (m *multiRangeDownloaderManager) addNewStream() {
 	m.streamCreating = true
-	m.sessionIDCounter++
 	id := int(m.sessionIDCounter)
+	m.sessionIDCounter++
 	// Clone the spec within the event loop.
 	clonedSpec := proto.Clone(m.readSpec).(*storagepb.BidiReadObjectSpec)
 	go func(id int, readSpec *storagepb.BidiReadObjectSpec) {
@@ -959,6 +960,7 @@ func (m *multiRangeDownloaderManager) handleStreamEnd(result mrdSessionResult, s
 	} else {
 		if !errors.Is(err, context.Canceled) && !errors.Is(err, errClosed) {
 			m.setPermanentError(err)
+			pErr = err
 		} else if pErr == nil {
 			m.setPermanentError(errClosed)
 			pErr = errClosed

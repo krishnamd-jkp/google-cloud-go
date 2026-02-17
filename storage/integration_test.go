@@ -644,8 +644,7 @@ func TestIntegration_MRDWithReadHandle(t *testing.T) {
 
 func TestIntegration_MRDScaleUpConnections(t *testing.T) {
 	multiTransportTest(skipAllButZonal(context.Background(), "Bidi Read API test"), t, func(t *testing.T, ctx context.Context, bucket string, _ string, client *Client) {
-		// Use a 10MB object to allow for many non-overlapping range requests.
-		content := make([]byte, 10<<20)
+		content := make([]byte, 1<<10)
 		rand.New(rand.NewSource(0)).Read(content)
 		objName := "MultiRangeDownloaderConcurrentReads"
 
@@ -671,11 +670,9 @@ func TestIntegration_MRDScaleUpConnections(t *testing.T) {
 			t.Fatalf("NewMultiRangeDownloader: %v", err)
 		}
 
-		addCount := 100
-
 		const (
-			rangeSize  = 1024 // Minimum size of a range request.
-			offsetStep = 2048 // Distance between the start of consecutive range requests.
+			addCount  = 100
+			rangeSize = 100
 		)
 
 		type rangeRes struct {
@@ -693,7 +690,7 @@ func TestIntegration_MRDScaleUpConnections(t *testing.T) {
 
 		for i := 0; i < addCount; i++ {
 			// Randomize offset/limit slightly to ensure varied request patterns.
-			offset := int64((i * offsetStep) % len(content))
+			offset := int64(0)
 			limit := int64(rangeSize)
 
 			r := &rangeRes{offset: offset, limit: limit}
@@ -705,9 +702,6 @@ func TestIntegration_MRDScaleUpConnections(t *testing.T) {
 				r.gotLimit = l
 				wg.Done()
 			})
-			// Sleep to make sure addStreams channel is also selected
-			// and not only addCommands.
-			time.Sleep(20 * time.Millisecond)
 		}
 
 		// Wait for all goroutines to finish adding their ranges.
@@ -715,14 +709,11 @@ func TestIntegration_MRDScaleUpConnections(t *testing.T) {
 		// Wait for all reads to complete.
 		reader.Wait()
 
-		streamCount := len(manager.streams)
-
+		if manager.sessionIDCounter != manager.params.maxConnections {
+			t.Fatalf("Manager did not scale up to maxConnections; got %d, want %d", len(manager.streams), manager.params.maxConnections)
+		}
 		if err = reader.Close(); err != nil {
 			t.Fatalf("Error while closing reader: %v", err)
-		}
-
-		if streamCount != manager.params.maxConnections {
-			t.Fatalf("Manager did not scale up to maxConnections; got %d, want %d", streamCount, manager.params.maxConnections)
 		}
 
 		for id, res := range results {

@@ -563,21 +563,21 @@ var methods = map[string][]retryFunc{
 			}
 
 			// Download the test object using the MultiRangeDownloader.
-			mrr, err := c.Bucket(fs.bucket.Name).Object(objName).NewMultiRangeDownloader(ctx)
+			mrd, err := c.Bucket(fs.bucket.Name).Object(objName).NewMultiRangeDownloader(ctx)
 			if err != nil {
 				return err
 			}
 			addCount := 50
 			results := make([]multiRangeDownloaderOutput, addCount)
 			for i := 0; i < addCount; i++ {
-				mrr.Add(&results[i].buf, 0, 3*MiB, func(x, y int64, err error) {
+				mrd.Add(&results[i].buf, 0, 3*MiB, func(x, y int64, err error) {
 					results[i].offset = x
 					results[i].limit = y
 					results[i].err = err
 				})
 			}
-			mrr.Wait()
-			if err = mrr.Close(); err != nil {
+			mrd.Wait()
+			if err = mrd.Close(); err != nil {
 				return err
 			}
 			for i := 0; i < addCount; i++ {
