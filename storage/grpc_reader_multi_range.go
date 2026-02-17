@@ -70,22 +70,53 @@ func (m *minBytesPicker) pick(streams map[int]*mrdStream) int {
 	minBytes := int64(-1)
 	returnID := -1
 	for id, stream := range streams {
+		if stream.reconnecting || stream.session == nil {
+			continue
+		}
+		// If the stream's request channel is full, skip it to avoid blocking the event loop.
+		// This ensures we only attempt a send if it can likely proceed immediately.
+		if len(stream.session.reqC) >= cap(stream.session.reqC) {
+			continue
+		}
 		if minBytes == -1 || stream.totalRangeBytes < minBytes {
 			minBytes = stream.totalRangeBytes
 			returnID = id
 		}
 	}
+	// If all channels are full or if all streams are reconnecting, returnID remains -1. The event
+	// loop will skip the send case and focus on processing responses until space becomes available.
 	return returnID
 }
 
 // mrdStream holds all the relevant information of a single
-// bidi stream
+// bidi stream.
 type mrdStream struct {
 	id              int
 	pendingRanges   map[int64]*rangeRequest
 	session         *bidiReadStreamSession
-	totalRanges     uint
+	reconnecting    bool
+	atCapacity      bool
+	totalRanges     int
 	totalRangeBytes int64
+	// statsRanges and statsRangeBytes help in tests to track
+	// distribution of ranges on different streams
+	statsRanges     uint
+	statsRangeBytes int64
+}
+
+func (s *mrdStream) updateCapacity(m *multiRangeDownloaderManager, deltaRanges int, deltaBytes int64) {
+	s.totalRanges = s.totalRanges + deltaRanges
+	m.pendingRangesCount += deltaRanges
+	s.totalRangeBytes += deltaBytes
+
+	wasAtCapacity := s.atCapacity
+	s.atCapacity = s.totalRanges >= m.params.targetPendingRanges || s.totalRangeBytes >= int64(m.params.targetPendingBytes)
+
+	if wasAtCapacity && !s.atCapacity {
+		m.atCapacityCount--
+	} else if !wasAtCapacity && s.atCapacity {
+		m.atCapacityCount++
+	}
 }
 
 // --- grpcStorageClient method ---
@@ -145,18 +176,17 @@ func (c *grpcStorageClient) NewMultiRangeDownloader(ctx context.Context, params 
 
 	// Blocking call to establish the first session and get attributes.
 	initialStreamID := 0
-	session, err := manager.createNewSession(initialStreamID, readSpec, true)
+	session, finalSpec, err := manager.createNewSession(initialStreamID, readSpec, true)
 	if err != nil {
-		// permanentErr is set within createNewSession if necessary.
-		return nil, manager.permanentErr
+		manager.setPermanentError(err)
+		return nil, err
 	}
+	// Update the manager's readSpec with any changes (like routing token) from the first session.
+	manager.readSpec = finalSpec
 	manager.streams[initialStreamID] = &mrdStream{
 		id:            initialStreamID,
 		session:       session,
 		pendingRanges: make(map[int64]*rangeRequest),
-	}
-	readSpec.ReadHandle = &storagepb.BidiReadHandle{
-		Handle: manager.lastReadHandle,
 	}
 	manager.wg.Add(1)
 	go func() {
@@ -167,10 +197,10 @@ func (c *grpcStorageClient) NewMultiRangeDownloader(ctx context.Context, params 
 	// Wait for attributes to be ready
 	select {
 	case <-manager.attrsReady:
-		if manager.permanentErr != nil {
+		if pErr := manager.getPermanentError(); pErr != nil {
 			cancel()
 			manager.wg.Wait()
-			return nil, manager.permanentErr
+			return nil, pErr
 		}
 		if manager.attrs != nil {
 			mrd.Attrs = *manager.attrs
@@ -249,25 +279,25 @@ func (c *mrdGetHandleCmd) apply(ctx context.Context, m *multiRangeDownloaderMana
 	}
 }
 
-type mrdErrorCmd struct {
-	respC chan error
-}
-
-func (c *mrdErrorCmd) apply(ctx context.Context, m *multiRangeDownloaderManager) {
-	select {
-	case c.respC <- m.permanentErr:
-	case <-ctx.Done():
-		close(c.respC)
-	}
-}
-
 type addStreamCmd struct {
 	id     int
+	spec   *storagepb.BidiReadObjectSpec
 	stream *mrdStream
 }
 
 func (c *addStreamCmd) apply(ctx context.Context, m *multiRangeDownloaderManager) {
 	m.handleAddStreamCmd(ctx, c)
+}
+
+type reconnectStreamCmd struct {
+	id      int
+	session *bidiReadStreamSession
+	spec    *storagepb.BidiReadObjectSpec
+	err     error
+}
+
+func (c *reconnectStreamCmd) apply(ctx context.Context, m *multiRangeDownloaderManager) {
+	m.handleReconnectStreamCmd(ctx, c)
 }
 
 type mrdAddStreamErrorCmd struct{}
@@ -303,23 +333,25 @@ type multiRangeDownloaderManager struct {
 	sessionResps chan mrdSessionResult
 
 	// State
-	readIDCounter  int64
-	permanentErr   error
-	waiters        []chan struct{}
-	readSpec       *storagepb.BidiReadObjectSpec
-	lastReadHandle []byte
-	attrs          *ReaderObjectAttrs
-	attrsReady     chan struct{}
-	attrsOnce      sync.Once
-	spanCtx        context.Context
-	callbackWg     sync.WaitGroup
-	streamCreating bool
-
-	streamPicker     streamPickerStrategy
-	sessionIDCounter int64
-	streams          map[int]*mrdStream
-	unsentRequests   *requestQueue
-	addStreams       chan mrdCommand
+	mu                 sync.Mutex
+	readIDCounter      int64
+	permanentErr       error
+	waiters            []chan struct{}
+	readSpec           *storagepb.BidiReadObjectSpec
+	lastReadHandle     []byte
+	pendingRangesCount int
+	attrs              *ReaderObjectAttrs
+	attrsReady         chan struct{}
+	attrsOnce          sync.Once
+	spanCtx            context.Context
+	callbackWg         sync.WaitGroup
+	streamCreating     bool
+	streamPicker       streamPickerStrategy
+	sessionIDCounter   int64
+	streams            map[int]*mrdStream
+	unsentRequests     *requestQueue
+	addStreams         chan mrdCommand
+	atCapacityCount    int
 }
 
 type rangeRequest struct {
@@ -339,8 +371,8 @@ type rangeRequest struct {
 // Methods implementing internalMultiRangeDownloader
 func (m *multiRangeDownloaderManager) add(output io.Writer, offset, length int64, callback func(int64, int64, error)) {
 	if err := m.ctx.Err(); err != nil {
-		if m.permanentErr != nil {
-			err = m.permanentErr
+		if pErr := m.getPermanentError(); pErr != nil {
+			err = pErr
 		}
 		m.runCallback(offset, length, err, callback)
 		return
@@ -355,8 +387,8 @@ func (m *multiRangeDownloaderManager) add(output io.Writer, offset, length int64
 	case m.cmds <- cmd:
 	case <-m.ctx.Done():
 		err := m.ctx.Err()
-		if m.permanentErr != nil {
-			err = m.permanentErr
+		if pErr := m.getPermanentError(); pErr != nil {
+			err = pErr
 		}
 		m.runCallback(offset, length, err, callback)
 	}
@@ -368,8 +400,8 @@ func (m *multiRangeDownloaderManager) close(err error) error {
 	case m.cmds <- cmd:
 		<-m.ctx.Done()
 		m.wg.Wait()
-		if m.permanentErr != nil && !errors.Is(m.permanentErr, errClosed) {
-			return m.permanentErr
+		if pErr := m.getPermanentError(); pErr != nil && !errors.Is(pErr, errClosed) {
+			return pErr
 		}
 		return nil
 	case <-m.ctx.Done():
@@ -423,6 +455,8 @@ func (m *multiRangeDownloaderManager) getHandle() []byte {
 }
 
 func (m *multiRangeDownloaderManager) getPermanentError() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.permanentErr
 }
 
@@ -438,6 +472,25 @@ func (m *multiRangeDownloaderManager) runCallback(origOffset, numBytes int64, er
 	}()
 }
 
+func (m *multiRangeDownloaderManager) getReqAndTargetStream(req *rangeRequest) (*storagepb.BidiReadObjectRequest, *mrdStream) {
+	streamToSend := m.streamPicker.pick(m.streams)
+	if streamToSend == -1 {
+		return nil, nil
+	}
+	stream := m.streams[streamToSend]
+	if stream == nil {
+		return nil, nil
+	}
+	protoReq := &storagepb.BidiReadObjectRequest{
+		ReadRanges: []*storagepb.ReadRange{{
+			ReadOffset: req.offset,
+			ReadLength: req.length,
+			ReadId:     req.readID,
+		}},
+	}
+	return protoReq, stream
+}
+
 func (m *multiRangeDownloaderManager) eventLoop() {
 	defer func() {
 		for id, stream := range m.streams {
@@ -446,7 +499,7 @@ func (m *multiRangeDownloaderManager) eventLoop() {
 			}
 			delete(m.streams, id)
 		}
-		finalErr := m.permanentErr
+		finalErr := m.getPermanentError()
 		if finalErr == nil {
 			if ctxErr := m.ctx.Err(); ctxErr != nil {
 				finalErr = ctxErr
@@ -465,19 +518,21 @@ func (m *multiRangeDownloaderManager) eventLoop() {
 
 	for {
 		var nextReq *storagepb.BidiReadObjectRequest
-		var targetChan chan<- *storagepb.BidiReadObjectRequest
+		var nextRangeReq *rangeRequest
+		var targetStream *mrdStream
+		var targetChan chan *storagepb.BidiReadObjectRequest
 
 		// Only try to send if we have queued requests
 		if m.unsentRequests.Len() > 0 {
-			nextAddReq := m.unsentRequests.Front()
-			if nextAddReq != nil {
-				stream, ok := m.streams[int(nextAddReq.id)]
-				if ok && stream != nil && stream.session != nil {
-					targetChan = stream.session.reqC
-					nextReq = nextAddReq.r
-				}
+			nextRangeReq = m.unsentRequests.Front()
+			if nextRangeReq != nil {
+				nextReq, targetStream = m.getReqAndTargetStream(nextRangeReq)
 			}
 		}
+		if targetStream != nil && targetStream.session != nil {
+			targetChan = targetStream.session.reqC
+		}
+
 		// Only read from cmds if we have space in the unsentRequests queue.
 		var cmdsChan chan mrdCommand
 		if m.unsentRequests.Len() < mrdAddInternalQueueMaxSize {
@@ -489,6 +544,14 @@ func (m *multiRangeDownloaderManager) eventLoop() {
 		// This path only triggers if space is available in the channel.
 		// It never blocks the eventLoop.
 		case targetChan <- nextReq:
+			targetStream.pendingRanges[nextRangeReq.readID] = nextRangeReq
+
+			targetStream.updateCapacity(m, 1, nextRangeReq.length)
+			// statsRanges & statsRangeBytes will only be increased to check
+			// distribution of ranges on various streams.
+			targetStream.statsRanges++
+			targetStream.statsRangeBytes += nextRangeReq.length
+
 			m.unsentRequests.RemoveFront()
 		case cmd := <-m.addStreams:
 			cmd.apply(m.ctx, m)
@@ -501,16 +564,11 @@ func (m *multiRangeDownloaderManager) eventLoop() {
 			m.processSessionResult(result)
 		}
 		// Check if new stream has to be added.
-		shouldAdd := m.shouldAddStream()
-		if shouldAdd {
+		if m.shouldAddStream() {
 			m.addNewStream()
 		}
 
-		allPendingRanges := 0
-		for _, req := range m.streams {
-			allPendingRanges += len(req.pendingRanges)
-		}
-		if allPendingRanges == 0 && m.unsentRequests.Len() == 0 {
+		if m.pendingRangesCount == 0 && m.unsentRequests.Len() == 0 {
 			for _, waiter := range m.waiters {
 				close(waiter)
 			}
@@ -523,30 +581,48 @@ func (m *multiRangeDownloaderManager) addNewStream() {
 	m.streamCreating = true
 	m.sessionIDCounter++
 	id := int(m.sessionIDCounter)
+	// Clone the spec within the event loop.
+	clonedSpec := proto.Clone(m.readSpec).(*storagepb.BidiReadObjectSpec)
 	go func(id int, readSpec *storagepb.BidiReadObjectSpec) {
-		newSession, err := m.createNewSession(id, readSpec, false)
-		if err != nil {
+		newSession, newSpec, err := m.createNewSession(id, readSpec, false)
+		if err != nil || newSession == nil {
 			// If we can't create a stream, just reset the flag so we can try again later.
 			// We don't want to kill the whole manager for a single failed dynamic stream.
-			m.addStreams <- &mrdAddStreamErrorCmd{}
+			select {
+			case m.addStreams <- &mrdAddStreamErrorCmd{}:
+			case <-m.ctx.Done():
+				if newSession != nil {
+					newSession.Shutdown()
+				}
+				return
+			}
 			return
 		}
-		m.addStreams <- &addStreamCmd{
-			id: id,
+		select {
+		case m.addStreams <- &addStreamCmd{
+			id:   id,
+			spec: newSpec,
 			stream: &mrdStream{
 				id:            id,
 				session:       newSession,
 				pendingRanges: make(map[int64]*rangeRequest),
 			},
+		}:
+		case <-m.ctx.Done():
+			newSession.Shutdown()
+			return
 		}
-	}(id, proto.Clone(m.readSpec).(*storagepb.BidiReadObjectSpec))
+
+	}(id, clonedSpec)
 }
 
-func (m *multiRangeDownloaderManager) createNewSession(id int, readSpec *storagepb.BidiReadObjectSpec, waitForResult bool) (*bidiReadStreamSession, error) {
+func (m *multiRangeDownloaderManager) createNewSession(id int, readSpec *storagepb.BidiReadObjectSpec, waitForResult bool) (*bidiReadStreamSession, *storagepb.BidiReadObjectSpec, error) {
 	retry := m.settings.retry
 
 	var firstResult mrdSessionResult
 	var newSession *bidiReadStreamSession
+	// Make a copy of the spec to work with internally.
+	currentSpec := proto.Clone(readSpec).(*storagepb.BidiReadObjectSpec)
 
 	openStream := func(ctx context.Context, spec *storagepb.BidiReadObjectSpec) (*bidiReadStreamSession, mrdSessionResult) {
 		session, err := newBidiReadStreamSession(m.ctx, id, m.sessionResps, m.client, m.settings, m.params, spec)
@@ -571,12 +647,12 @@ func (m *multiRangeDownloaderManager) createNewSession(id int, readSpec *storage
 			newSession = nil
 		}
 
-		session, result := openStream(ctx, readSpec)
+		session, result := openStream(ctx, currentSpec)
 
 		if result.err != nil {
 			if result.redirect != nil {
-				m.readSpec.RoutingToken = result.redirect.RoutingToken
-				m.readSpec.ReadHandle = result.redirect.ReadHandle
+				currentSpec.RoutingToken = result.redirect.RoutingToken
+				currentSpec.ReadHandle = result.redirect.ReadHandle
 				if session != nil {
 					session.Shutdown()
 				}
@@ -584,7 +660,7 @@ func (m *multiRangeDownloaderManager) createNewSession(id int, readSpec *storage
 				// We might get a redirect error here for an out-of-region request.
 				// Add the routing token and read handle to the request and do one
 				// retry.
-				session, result = openStream(ctx, readSpec)
+				session, result = openStream(ctx, currentSpec)
 
 				if result.err != nil {
 					if session != nil {
@@ -608,23 +684,22 @@ func (m *multiRangeDownloaderManager) createNewSession(id int, readSpec *storage
 	}, retry, true)
 
 	if err != nil {
-		m.setPermanentError(err)
-		return nil, m.permanentErr
+		return nil, nil, err
 	}
 
 	if waitForResult {
 		// Process the successful first result
 		m.processSessionResult(firstResult)
-		if m.permanentErr != nil {
-			return nil, m.permanentErr
+		if pErr := m.getPermanentError(); pErr != nil {
+			return nil, nil, pErr
 		}
 	}
-	return newSession, nil
+	return newSession, currentSpec, nil
 }
 
 func (m *multiRangeDownloaderManager) handleAddCmd(ctx context.Context, cmd *mrdAddCmd) {
-	if m.permanentErr != nil {
-		m.runCallback(cmd.offset, cmd.length, m.permanentErr, cmd.callback)
+	if pErr := m.getPermanentError(); pErr != nil {
+		m.runCallback(cmd.offset, cmd.length, pErr, cmd.callback)
 		return
 	}
 
@@ -639,13 +714,6 @@ func (m *multiRangeDownloaderManager) handleAddCmd(ctx context.Context, cmd *mrd
 	}
 	m.readIDCounter++
 
-	// Attributes should be ready if we are processing Add commands
-	streamToSend := m.streamPicker.pick(m.streams)
-	if streamToSend < 0 {
-		m.failRange(nil, req, errors.New("storage: no streams available"))
-		return
-	}
-
 	// Convert to positive offset only if attributes are available.
 	if m.attrs != nil && req.offset < 0 {
 		err := m.convertToPositiveOffset(nil, req)
@@ -654,27 +722,7 @@ func (m *multiRangeDownloaderManager) handleAddCmd(ctx context.Context, cmd *mrd
 		}
 	}
 
-	if session, ok := m.streams[int(streamToSend)]; !ok || session == nil {
-		m.failRange(nil, req, errors.New("storage: session not available"))
-		return
-	}
-
-	m.streams[int(streamToSend)].pendingRanges[req.readID] = req
-	m.streams[int(streamToSend)].totalRanges++
-	m.streams[int(streamToSend)].totalRangeBytes += req.length
-
-	protoReq := &storagepb.BidiReadObjectRequest{
-		ReadRanges: []*storagepb.ReadRange{{
-			ReadOffset: req.offset,
-			ReadLength: req.length,
-			ReadId:     req.readID,
-		}},
-	}
-	mrdQueuedRequest := &mrdQueuedRequest{
-		r:  protoReq,
-		id: int(streamToSend),
-	}
-	m.unsentRequests.PushBack(mrdQueuedRequest)
+	m.unsentRequests.PushBack(req)
 }
 
 func (m *multiRangeDownloaderManager) shouldAddStream() bool {
@@ -686,13 +734,7 @@ func (m *multiRangeDownloaderManager) shouldAddStream() bool {
 	}
 
 	// Beyond minConnections, we only add if all existing active streams are at capacity.
-	allAtCapacity := true
-	for _, stream := range m.streams {
-		if !(stream.totalRanges > uint(m.params.targetPendingRanges) || stream.totalRangeBytes > int64(m.params.targetPendingBytes)) {
-			allAtCapacity = false
-		}
-	}
-	return allAtCapacity
+	return m.atCapacityCount >= len(m.streams)
 }
 
 func (m *multiRangeDownloaderManager) convertToPositiveOffset(mrdStream *mrdStream, req *rangeRequest) error {
@@ -714,7 +756,7 @@ func (m *multiRangeDownloaderManager) convertToPositiveOffset(mrdStream *mrdStre
 		diff := (objSize - start)
 		req.length = objSize - start
 		if mrdStream != nil {
-			mrdStream.totalRangeBytes += diff
+			mrdStream.updateCapacity(m, 0, diff)
 		}
 	}
 	return nil
@@ -733,11 +775,7 @@ func (m *multiRangeDownloaderManager) handleCloseCmd(ctx context.Context, cmd *m
 }
 
 func (m *multiRangeDownloaderManager) handleWaitCmd(ctx context.Context, cmd *mrdWaitCmd) {
-	allPendingRanges := 0
-	for _, stream := range m.streams {
-		allPendingRanges += len(stream.pendingRanges)
-	}
-	if allPendingRanges == 0 {
+	if m.pendingRangesCount == 0 && m.unsentRequests.Len() == 0 {
 		close(cmd.doneC)
 	} else {
 		m.waiters = append(m.waiters, cmd.doneC)
@@ -746,7 +784,60 @@ func (m *multiRangeDownloaderManager) handleWaitCmd(ctx context.Context, cmd *mr
 
 func (m *multiRangeDownloaderManager) handleAddStreamCmd(ctx context.Context, cmd *addStreamCmd) {
 	m.streams[cmd.id] = cmd.stream
+	m.readSpec = cmd.spec
 	m.streamCreating = false
+}
+
+func (m *multiRangeDownloaderManager) handleReconnectStreamCmd(ctx context.Context, cmd *reconnectStreamCmd) {
+	stream, ok := m.streams[cmd.id]
+	if !ok || stream == nil {
+		// Stream might have been removed during shutdown.
+		if cmd.session != nil {
+			cmd.session.Shutdown()
+		}
+		return
+	}
+	stream.reconnecting = false
+
+	if cmd.err != nil {
+		if !errors.Is(cmd.err, context.Canceled) && !errors.Is(cmd.err, errClosed) {
+			m.setPermanentError(cmd.err)
+		} else if m.getPermanentError() == nil {
+			m.setPermanentError(errClosed)
+		}
+		m.failAllPending(m.getPermanentError())
+		return
+	}
+
+	stream.session = cmd.session
+	if cmd.spec != nil {
+		m.readSpec = cmd.spec
+	}
+
+	var rangesToResend []*storagepb.ReadRange
+	for _, req := range stream.pendingRanges {
+		if !req.completed {
+			readLength := req.length
+			if req.length > 0 {
+				readLength -= req.bytesWritten
+			}
+			if readLength < 0 {
+				readLength = 0
+			}
+
+			if req.length == 0 || readLength > 0 {
+				rangesToResend = append(rangesToResend, &storagepb.ReadRange{
+					ReadOffset: req.offset + req.bytesWritten,
+					ReadLength: readLength,
+					ReadId:     req.readID,
+				})
+			}
+		}
+	}
+	if len(rangesToResend) > 0 {
+		retryReq := &storagepb.BidiReadObjectRequest{ReadRanges: rangesToResend}
+		stream.session.SendRequest(retryReq)
+	}
 }
 
 func (m *multiRangeDownloaderManager) processSessionResult(result mrdSessionResult) {
@@ -758,6 +849,13 @@ func (m *multiRangeDownloaderManager) processSessionResult(result mrdSessionResu
 	resp := result.decoder.msg
 	if handle := resp.GetReadHandle().GetHandle(); len(handle) > 0 {
 		m.lastReadHandle = handle
+		if m.readSpec.ReadHandle == nil {
+			m.readSpec.ReadHandle = &storagepb.BidiReadHandle{
+				Handle: handle,
+			}
+		} else {
+			m.readSpec.ReadHandle.Handle = handle
+		}
 	}
 	m.attrsOnce.Do(func() {
 		defer close(m.attrsReady)
@@ -770,6 +868,13 @@ func (m *multiRangeDownloaderManager) processSessionResult(result mrdSessionResu
 					if req.offset < 0 {
 						_ = m.convertToPositiveOffset(stream, req)
 					}
+				}
+			}
+			// Iterate unsent requests.
+			for req := m.unsentRequests.l.Front(); req != nil; req = req.Next() {
+				rangeReq := req.Value.(*rangeRequest)
+				if rangeReq.offset < 0 {
+					_ = m.convertToPositiveOffset(nil, rangeReq)
 				}
 			}
 		}
@@ -788,7 +893,7 @@ func (m *multiRangeDownloaderManager) processSessionResult(result mrdSessionResu
 		}
 		written, _, err := result.decoder.writeToAndUpdateCRC(req.output, readID, nil)
 		req.bytesWritten += written
-		mrdStream.totalRangeBytes -= written
+		mrdStream.updateCapacity(m, 0, -written)
 		if err != nil {
 			m.failRange(mrdStream, req, err)
 			continue
@@ -797,7 +902,7 @@ func (m *multiRangeDownloaderManager) processSessionResult(result mrdSessionResu
 		if dataRange.GetRangeEnd() {
 			req.completed = true
 			delete(mrdStream.pendingRanges, req.readID)
-			mrdStream.totalRanges--
+			mrdStream.updateCapacity(m, -1, 0)
 			m.runCallback(req.origOffset, req.bytesWritten, nil, req.callback)
 		}
 	}
@@ -806,61 +911,31 @@ func (m *multiRangeDownloaderManager) processSessionResult(result mrdSessionResu
 }
 
 // ensureSession is now only for reconnecting *after* the initial session is up.
-func (m *multiRangeDownloaderManager) ensureSession(ctx context.Context, stream *mrdStream) error {
-	if stream.session != nil {
-		return nil
+func (m *multiRangeDownloaderManager) ensureSession(ctx context.Context, stream *mrdStream) {
+	if stream.session != nil || stream.reconnecting {
+		return
 	}
-	if m.permanentErr != nil {
-		return m.permanentErr
+	if pErr := m.getPermanentError(); pErr != nil {
+		return
 	}
 
-	// Using run for retries
-	return run(ctx, func(ctx context.Context) error {
-		if stream.session != nil {
-			return nil
-		}
-		if m.permanentErr != nil {
-			return m.permanentErr
+	stream.reconnecting = true
+	// Clone the spec within the event loop.
+	clonedSpec := proto.Clone(m.readSpec).(*storagepb.BidiReadObjectSpec)
+	go func(id int, readSpec *storagepb.BidiReadObjectSpec) {
+		session, finalSpec, err := m.createNewSession(id, readSpec, false)
+		select {
+		case <-ctx.Done():
+			return
+		case m.addStreams <- &reconnectStreamCmd{
+			id:      id,
+			session: session,
+			spec:    finalSpec,
+			err:     err,
+		}:
 		}
 
-		session, err := newBidiReadStreamSession(m.ctx, stream.id, m.sessionResps, m.client, m.settings, m.params, proto.Clone(m.readSpec).(*storagepb.BidiReadObjectSpec))
-		if err != nil {
-			redirectErr, isRedirect := isRedirectError(err)
-			if isRedirect {
-				m.readSpec.RoutingToken = redirectErr.RoutingToken
-				m.readSpec.ReadHandle = redirectErr.ReadHandle
-				return fmt.Errorf("%w: %v", errBidiReadRedirect, err)
-			}
-			return err
-		}
-		stream.session = session
-
-		var rangesToResend []*storagepb.ReadRange
-		for _, req := range stream.pendingRanges {
-			if !req.completed {
-				readLength := req.length
-				if req.length > 0 {
-					readLength -= req.bytesWritten
-				}
-				if readLength < 0 {
-					readLength = 0
-				}
-
-				if req.length == 0 || readLength > 0 {
-					rangesToResend = append(rangesToResend, &storagepb.ReadRange{
-						ReadOffset: req.offset + req.bytesWritten,
-						ReadLength: readLength,
-						ReadId:     req.readID,
-					})
-				}
-			}
-		}
-		if len(rangesToResend) > 0 {
-			retryReq := &storagepb.BidiReadObjectRequest{ReadRanges: rangesToResend}
-			m.unsentRequests.PushFront(&mrdQueuedRequest{r: retryReq, id: stream.id})
-		}
-		return nil
-	}, m.settings.retry, true)
+	}(stream.id, clonedSpec)
 }
 
 var errBidiReadRedirect = errors.New("bidi read object redirected")
@@ -874,27 +949,21 @@ func (m *multiRangeDownloaderManager) handleStreamEnd(result mrdSessionResult, s
 		stream.session = nil
 	}
 	err := result.err
-	var ensureErr error
-
+	pErr := m.getPermanentError()
 	if result.redirect != nil {
 		m.readSpec.RoutingToken = result.redirect.RoutingToken
 		m.readSpec.ReadHandle = result.redirect.ReadHandle
-		ensureErr = m.ensureSession(m.ctx, stream)
+		m.ensureSession(m.ctx, stream)
 	} else if m.settings.retry != nil && m.settings.retry.runShouldRetry(err) {
-		ensureErr = m.ensureSession(m.ctx, stream)
+		m.ensureSession(m.ctx, stream)
 	} else {
 		if !errors.Is(err, context.Canceled) && !errors.Is(err, errClosed) {
 			m.setPermanentError(err)
-		} else if m.permanentErr == nil {
+		} else if pErr == nil {
 			m.setPermanentError(errClosed)
+			pErr = errClosed
 		}
-		m.failAllPending(m.permanentErr)
-	}
-
-	// Handle error from ensureSession.
-	if ensureErr != nil {
-		m.setPermanentError(ensureErr)
-		m.failAllPending(m.permanentErr)
+		m.failAllPending(pErr)
 	}
 }
 
@@ -906,8 +975,7 @@ func (m *multiRangeDownloaderManager) failRange(mrdStream *mrdStream, req *range
 	if mrdStream != nil {
 		if _, ok := mrdStream.pendingRanges[req.readID]; ok {
 			delete(mrdStream.pendingRanges, req.readID)
-			mrdStream.totalRanges--
-			mrdStream.totalRangeBytes -= (req.length - req.bytesWritten)
+			mrdStream.updateCapacity(m, -1, -(req.length - req.bytesWritten))
 		}
 	}
 	m.runCallback(req.origOffset, req.bytesWritten, err, req.callback)
@@ -924,12 +992,21 @@ func (m *multiRangeDownloaderManager) failAllPending(err error) {
 		stream.pendingRanges = make(map[int64]*rangeRequest)
 		stream.totalRanges = 0
 		stream.totalRangeBytes = 0
+		stream.atCapacity = false
 	}
-	m.unsentRequests = newRequestQueue()
+	// fail all the ranges in unsent requests
+	for req := m.unsentRequests.l.Front(); req != nil; req = req.Next() {
+		m.failRange(nil, req.Value.(*rangeRequest), err)
+	}
+	m.unsentRequests.l.Init()
+	m.pendingRangesCount = 0
+	m.atCapacityCount = 0
 }
 
 // Set permanent error to the provided error, if it hasn't been set already.
 func (m *multiRangeDownloaderManager) setPermanentError(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.permanentErr == nil {
 		m.permanentErr = err
 	}
@@ -1123,22 +1200,16 @@ type requestQueue struct {
 	l *list.List
 }
 
-type mrdQueuedRequest struct {
-	id int
-	r  *storagepb.BidiReadObjectRequest
-}
-
 func newRequestQueue() *requestQueue {
 	return &requestQueue{l: list.New()}
 }
 
-func (q *requestQueue) PushBack(r *mrdQueuedRequest)  { q.l.PushBack(r) }
-func (q *requestQueue) PushFront(r *mrdQueuedRequest) { q.l.PushFront(r) }
-func (q *requestQueue) Len() int                      { return q.l.Len() }
+func (q *requestQueue) PushBack(r *rangeRequest) { q.l.PushBack(r) }
+func (q *requestQueue) Len() int                 { return q.l.Len() }
 
-func (q *requestQueue) Front() *mrdQueuedRequest {
+func (q *requestQueue) Front() *rangeRequest {
 	if f := q.l.Front(); f != nil {
-		return f.Value.(*mrdQueuedRequest)
+		return f.Value.(*rangeRequest)
 	}
 	return nil
 }
