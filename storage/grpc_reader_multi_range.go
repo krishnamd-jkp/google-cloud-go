@@ -33,9 +33,10 @@ import (
 )
 
 const (
-	mrdCommandChannelSize  = 1
-	mrdResponseChannelSize = 100
-	mrdSendChannelSize     = 100
+	mrdCommandChannelSize    = 1
+	mrdResponseChannelSize   = 100
+	mrdSendChannelSize       = 100
+	mrdAddStreamsChannelSize = 100
 	// This should never be hit in practice, but is a safety valve to prevent
 	// unbounded memory usage if the user is adding ranges faster than they
 	// can be processed.
@@ -126,6 +127,11 @@ func (c *grpcStorageClient) NewMultiRangeDownloader(ctx context.Context, params 
 		return nil, errors.New("storage: MultiRangeDownloader requires the experimental.WithGRPCBidiReads option")
 	}
 	s := callSettings(c.settings, opts...)
+	// Force the use of the custom codec to enable zero-copy reads.
+	s.gax = append(s.gax, gax.WithGRPCOptions(
+		grpc.ForceCodecV2(bytesCodecV2{}),
+	))
+
 	if s.userProject != "" {
 		ctx = setUserProjectMetadata(ctx, s.userProject)
 	}
@@ -167,7 +173,7 @@ func (c *grpcStorageClient) NewMultiRangeDownloader(ctx context.Context, params 
 		streams:        make(map[int]*mrdStream),
 		streamPicker:   &minBytesPicker{},
 		unsentRequests: newRequestQueue(),
-		addStreams:     make(chan mrdCommand),
+		addStreams:     make(chan mrdCommand, mrdAddStreamsChannelSize),
 	}
 
 	mrd := &MultiRangeDownloader{
@@ -177,6 +183,10 @@ func (c *grpcStorageClient) NewMultiRangeDownloader(ctx context.Context, params 
 	// Blocking call to establish the first session and get attributes.
 	initialStreamID := manager.streamIDCounter
 	manager.streamIDCounter++
+	manager.streams[initialStreamID] = &mrdStream{
+		id:            initialStreamID,
+		pendingRanges: make(map[int64]*rangeRequest),
+	}
 	session, finalSpec, err := manager.createNewSession(initialStreamID, readSpec, true)
 	if err != nil {
 		manager.setPermanentError(err)
@@ -184,11 +194,7 @@ func (c *grpcStorageClient) NewMultiRangeDownloader(ctx context.Context, params 
 	}
 	// Update the manager's readSpec with any changes (like routing token) from the first session.
 	manager.readSpec = finalSpec
-	manager.streams[initialStreamID] = &mrdStream{
-		id:            initialStreamID,
-		session:       session,
-		pendingRanges: make(map[int64]*rangeRequest),
-	}
+	manager.streams[initialStreamID].session = session
 	manager.wg.Add(1)
 	go func() {
 		defer manager.wg.Done()
@@ -315,6 +321,7 @@ type mrdSessionResult struct {
 	id       int
 	decoder  *readResponseDecoder
 	err      error
+	session  *bidiReadStreamSession
 	redirect *storagepb.BidiReadObjectRedirectedError
 }
 
@@ -500,6 +507,15 @@ func (m *multiRangeDownloaderManager) eventLoop() {
 			}
 			delete(m.streams, id)
 		}
+
+		// Drain and free any remaining responses to prevent buffer leaks.
+		close(m.sessionResps)
+		for result := range m.sessionResps {
+			if result.decoder != nil {
+				result.decoder.databufs.Free()
+			}
+		}
+
 		finalErr := m.getPermanentError()
 		if finalErr == nil {
 			if ctxErr := m.ctx.Err(); ctxErr != nil {
@@ -631,12 +647,21 @@ func (m *multiRangeDownloaderManager) createNewSession(id int, readSpec *storage
 		if !waitForResult {
 			return session, mrdSessionResult{}
 		}
-		select {
-		case result := <-m.sessionResps:
-			return session, result
-		case <-ctx.Done():
-			session.Shutdown()
-			return nil, mrdSessionResult{err: ctx.Err()}
+		for {
+			select {
+			case result := <-m.sessionResps:
+				if result.session != session {
+					// Stale session result, free it if it has data.
+					if result.decoder != nil {
+						result.decoder.databufs.Free()
+					}
+					continue
+				}
+				return session, result
+			case <-ctx.Done():
+				session.Shutdown()
+				return nil, mrdSessionResult{err: ctx.Err()}
+			}
 		}
 	}
 
@@ -842,6 +867,19 @@ func (m *multiRangeDownloaderManager) handleReconnectStreamCmd(ctx context.Conte
 }
 
 func (m *multiRangeDownloaderManager) processSessionResult(result mrdSessionResult) {
+	if result.decoder != nil {
+		defer result.decoder.databufs.Free()
+	}
+
+	mrdStream := m.streams[result.id]
+	// Shutdown any stale streams sending responses.
+	if mrdStream != nil &&
+		mrdStream.session != nil &&
+		mrdStream.session != result.session {
+		result.session.Shutdown()
+		return
+	}
+
 	if result.err != nil {
 		m.handleStreamEnd(result, m.streams[result.id])
 		return
@@ -881,7 +919,6 @@ func (m *multiRangeDownloaderManager) processSessionResult(result mrdSessionResu
 		}
 	})
 
-	mrdStream := m.streams[result.id]
 	if mrdStream == nil {
 		return
 	}
@@ -907,8 +944,6 @@ func (m *multiRangeDownloaderManager) processSessionResult(result mrdSessionResu
 			m.runCallback(req.origOffset, req.bytesWritten, nil, req.callback)
 		}
 	}
-	// Once all data in the initial response has been read out, free buffers.
-	result.decoder.databufs.Free()
 }
 
 // ensureSession is now only for reconnecting *after* the initial session is up.
@@ -942,7 +977,8 @@ func (m *multiRangeDownloaderManager) ensureSession(ctx context.Context, stream 
 var errBidiReadRedirect = errors.New("bidi read object redirected")
 
 func (m *multiRangeDownloaderManager) handleStreamEnd(result mrdSessionResult, stream *mrdStream) {
-	if stream == nil {
+	if stream == nil || stream.session != result.session {
+		result.session.Shutdown()
 		return
 	}
 	if stream.session != nil {
@@ -1019,9 +1055,10 @@ func (m *multiRangeDownloaderManager) setPermanentError(err error) {
 // object in GCS. Spins up goroutines for the read and write sides of the
 // stream.
 type bidiReadStreamSession struct {
-	id     int
-	ctx    context.Context
-	cancel context.CancelFunc
+	id         int
+	managerCtx context.Context
+	ctx        context.Context
+	cancel     context.CancelFunc
 
 	stream   storagepb.Storage_BidiReadObjectClient
 	client   *grpcStorageClient
@@ -1041,25 +1078,22 @@ func newBidiReadStreamSession(ctx context.Context, id int, respC chan<- mrdSessi
 	sCtx, cancel := context.WithCancel(ctx)
 
 	s := &bidiReadStreamSession{
-		id:       id,
-		ctx:      sCtx,
-		cancel:   cancel,
-		client:   client,
-		settings: settings,
-		params:   params,
-		readSpec: readSpec,
-		reqC:     make(chan *storagepb.BidiReadObjectRequest, mrdSendChannelSize),
-		respC:    respC,
+		id:         id,
+		ctx:        sCtx,
+		managerCtx: ctx,
+		cancel:     cancel,
+		client:     client,
+		settings:   settings,
+		params:     params,
+		readSpec:   readSpec,
+		reqC:       make(chan *storagepb.BidiReadObjectRequest, mrdSendChannelSize),
+		respC:      respC,
 	}
 
 	initialReq := &storagepb.BidiReadObjectRequest{
 		ReadObjectSpec: s.readSpec,
 	}
 	reqCtx := gax.InsertMetadataIntoOutgoingContext(s.ctx, contextMetadataFromBidiReadObject(initialReq)...)
-	// Force the use of the custom codec to enable zero-copy reads.
-	s.settings.gax = append(s.settings.gax, gax.WithGRPCOptions(
-		grpc.ForceCodecV2(bytesCodecV2{}),
-	))
 
 	var err error
 	s.stream, err = client.raw.BidiReadObject(reqCtx, s.settings.gax...)
@@ -1123,10 +1157,6 @@ func (s *bidiReadStreamSession) receiveLoop() {
 	defer s.wg.Done()
 	defer s.cancel()
 	for {
-		if err := s.ctx.Err(); err != nil {
-			return
-		}
-
 		// Receive message without a copy.
 		databufs := mem.BufferSlice{}
 		err := s.stream.RecvMsg(&databufs)
@@ -1142,7 +1172,11 @@ func (s *bidiReadStreamSession) receiveLoop() {
 		if err != nil {
 			databufs.Free()
 			redirectErr, isRedirect := isRedirectError(err)
-			result := mrdSessionResult{err: err, id: s.id}
+			result := mrdSessionResult{
+				err:     err,
+				id:      s.id,
+				session: s,
+			}
 			if isRedirect {
 				result.redirect = redirectErr
 				err = fmt.Errorf("%w: %v", errBidiReadRedirect, err)
@@ -1152,14 +1186,35 @@ func (s *bidiReadStreamSession) receiveLoop() {
 
 			select {
 			case s.respC <- result:
-			case <-s.ctx.Done():
+			case <-s.managerCtx.Done():
 			}
 			return
 		}
 
 		select {
-		case s.respC <- mrdSessionResult{decoder: decoder, id: s.id}:
+		case s.respC <- mrdSessionResult{
+			decoder: decoder,
+			id:      s.id,
+			session: s,
+		}:
+
 		case <-s.ctx.Done():
+			// If context is cancelled unexpectedly, make sure to notify
+			// eventLoop before returning
+			err := s.streamErr
+			if err == nil {
+				err = s.ctx.Err()
+			}
+			// Make sure the event loop is active before sending error
+			// to make sure we do not send on a closed respC channel
+			// during normal MRD close.
+			if s.managerCtx.Err() != nil {
+				return
+			}
+			select {
+			case s.respC <- mrdSessionResult{id: s.id, session: s, err: err}:
+			case <-s.managerCtx.Done():
+			}
 			return
 		}
 	}
