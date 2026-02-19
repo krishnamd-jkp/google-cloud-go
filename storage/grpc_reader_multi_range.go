@@ -1190,14 +1190,18 @@ func (s *bidiReadStreamSession) receiveLoop() {
 				result.err = err
 			}
 			s.setError(err)
-
+			if s.managerCtx.Err() != nil {
+				return
+			}
 			select {
 			case s.respC <- result:
 			case <-s.managerCtx.Done():
 			}
 			return
 		}
-
+		if s.managerCtx.Err() != nil {
+			return
+		}
 		select {
 		case s.respC <- mrdSessionResult{
 			decoder: decoder,
