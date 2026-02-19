@@ -801,6 +801,9 @@ func (m *multiRangeDownloaderManager) handleCloseCmd(ctx context.Context, cmd *m
 }
 
 func (m *multiRangeDownloaderManager) handleWaitCmd(ctx context.Context, cmd *mrdWaitCmd) {
+	// unsentRequests could be non-empty when eventLoop is busy
+	// in select statements other than Add commands and cleared up
+	// existing pending ranges.
 	if m.pendingRangesCount == 0 && m.unsentRequests.Len() == 0 {
 		close(cmd.doneC)
 	} else {
@@ -1040,7 +1043,7 @@ func (m *multiRangeDownloaderManager) failAllPending(err error) {
 	for req := m.unsentRequests.l.Front(); req != nil; req = req.Next() {
 		m.failRange(nil, req.Value.(*rangeRequest), err)
 	}
-	m.unsentRequests.l.Init()
+	m.unsentRequests.Clear()
 	m.pendingRangesCount = 0
 	m.atCapacityCount = 0
 }
@@ -1267,6 +1270,7 @@ func newRequestQueue() *requestQueue {
 
 func (q *requestQueue) PushBack(r *rangeRequest) { q.l.PushBack(r) }
 func (q *requestQueue) Len() int                 { return q.l.Len() }
+func (q *requestQueue) Clear()                   { q.l.Init() }
 
 func (q *requestQueue) Front() *rangeRequest {
 	if f := q.l.Front(); f != nil {

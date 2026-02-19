@@ -90,8 +90,8 @@ const (
 	testUniverseLocation   = "TEST_UNIVERSE_LOCATION"
 	testUniverseCreds      = "TEST_UNIVERSE_DOMAIN_CREDENTIAL"
 	// Location and Zone for zonal buckets tests
-	testZonalLocation = "us-central1"
-	testZonalZone     = "us-central1-a"
+	testZonalLocation = "us-west4"
+	testZonalZone     = "us-west4-a"
 )
 
 var (
@@ -710,7 +710,7 @@ func TestIntegration_MRDScaleUpConnections(t *testing.T) {
 		reader.Wait()
 
 		if manager.streamIDCounter != manager.params.maxConnections {
-			t.Fatalf("Manager did not scale up to maxConnections; got %d, want %d", len(manager.streams), manager.params.maxConnections)
+			t.Fatalf("Manager did not scale up to maxConnections; got %d, want %d", manager.streamIDCounter, manager.params.maxConnections)
 		}
 		if err = reader.Close(); err != nil {
 			t.Fatalf("Error while closing reader: %v", err)
