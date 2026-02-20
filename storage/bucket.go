@@ -1352,7 +1352,10 @@ func (ua *BucketAttrsToUpdate) toRawBucket() *raw.Bucket {
 		rb.IamConfiguration.PublicAccessPrevention = ua.PublicAccessPrevention.String()
 	}
 	if ua.Encryption != nil {
-		if ua.Encryption.DefaultKMSKeyName == "" {
+		if ua.Encryption.DefaultKMSKeyName == "" &&
+			ua.Encryption.GoogleManagedEncryptionEnforcementConfig == nil &&
+			ua.Encryption.CustomerManagedEncryptionEnforcementConfig == nil &&
+			ua.Encryption.CustomerSuppliedEncryptionEnforcementConfig == nil {
 			rb.NullFields = append(rb.NullFields, "Encryption")
 			rb.Encryption = nil
 		} else {
