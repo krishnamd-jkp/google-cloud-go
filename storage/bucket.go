@@ -1147,21 +1147,20 @@ type BucketEncryption struct {
 
 	// GoogleManagedEncryptionEnforcementConfig specifies the enforcement config
 	// for Google Managed Encryption.
-	GoogleManagedEncryptionEnforcementConfig *GoogleManagedEncryptionEnforcementConfig
+	GoogleManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 
 	// CustomerManagedEncryptionEnforcementConfig specifies the enforcement config
 	// for Customer Managed Encryption.
-	CustomerManagedEncryptionEnforcementConfig *CustomerManagedEncryptionEnforcementConfig
+	CustomerManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 
 	// CustomerSuppliedEncryptionEnforcementConfig specifies the enforcement config
 	// for Customer Supplied Encryption.
-	CustomerSuppliedEncryptionEnforcementConfig *CustomerSuppliedEncryptionEnforcementConfig
+	CustomerSuppliedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 }
 
-// GoogleManagedEncryptionEnforcementConfig specifies the enforcement config
-// for Google Managed Encryption.
-type GoogleManagedEncryptionEnforcementConfig struct {
-	// RestrictionMode specifies the restriction mode for Google Managed Encryption.
+// EncryptionEnforcementConfig specifies the enforcement config for encryption.
+type EncryptionEnforcementConfig struct {
+	// RestrictionMode specifies the restriction mode for encryption.
 	// Valid values are "NotRestricted" and "FullyRestricted".
 	RestrictionMode string
 
@@ -1170,29 +1169,11 @@ type GoogleManagedEncryptionEnforcementConfig struct {
 	EffectiveTime time.Time
 }
 
-// CustomerManagedEncryptionEnforcementConfig specifies the enforcement config
-// for Customer Managed Encryption.
-type CustomerManagedEncryptionEnforcementConfig struct {
-	// RestrictionMode specifies the restriction mode for Customer Managed Encryption.
-	// Valid values are "NotRestricted" and "FullyRestricted".
-	RestrictionMode string
-
-	// EffectiveTime is the time from which the policy was enforced and
-	// effective. This field is read-only.
-	EffectiveTime time.Time
-}
-
-// CustomerSuppliedEncryptionEnforcementConfig specifies the enforcement config
-// for Customer Supplied Encryption.
-type CustomerSuppliedEncryptionEnforcementConfig struct {
-	// RestrictionMode specifies the restriction mode for Customer Supplied Encryption.
-	// Valid values are "NotRestricted" and "FullyRestricted".
-	RestrictionMode string
-
-	// EffectiveTime is the time from which the policy was enforced and
-	// effective. This field is read-only.
-	EffectiveTime time.Time
-}
+// RestrictionMode constants.
+const (
+	RestrictionModeNotRestricted   = "NotRestricted"
+	RestrictionModeFullyRestricted = "FullyRestricted"
+)
 
 // BucketAttrsToUpdate define the attributes to update during an Update call.
 type BucketAttrsToUpdate struct {
@@ -1919,18 +1900,30 @@ func (e *BucketEncryption) toProtoBucketEncryption() *storagepb.Bucket_Encryptio
 		DefaultKmsKey: e.DefaultKMSKeyName,
 	}
 	if e.GoogleManagedEncryptionEnforcementConfig != nil {
+		var restrictionMode *string
+		if e.GoogleManagedEncryptionEnforcementConfig.RestrictionMode != "" {
+			restrictionMode = &e.GoogleManagedEncryptionEnforcementConfig.RestrictionMode
+		}
 		ret.GoogleManagedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_GoogleManagedEncryptionEnforcementConfig{
-			RestrictionMode: strPtr(e.GoogleManagedEncryptionEnforcementConfig.RestrictionMode),
+			RestrictionMode: restrictionMode,
 		}
 	}
 	if e.CustomerManagedEncryptionEnforcementConfig != nil {
+		var restrictionMode *string
+		if e.CustomerManagedEncryptionEnforcementConfig.RestrictionMode != "" {
+			restrictionMode = &e.CustomerManagedEncryptionEnforcementConfig.RestrictionMode
+		}
 		ret.CustomerManagedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_CustomerManagedEncryptionEnforcementConfig{
-			RestrictionMode: strPtr(e.CustomerManagedEncryptionEnforcementConfig.RestrictionMode),
+			RestrictionMode: restrictionMode,
 		}
 	}
 	if e.CustomerSuppliedEncryptionEnforcementConfig != nil {
+		var restrictionMode *string
+		if e.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode != "" {
+			restrictionMode = &e.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode
+		}
 		ret.CustomerSuppliedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_CustomerSuppliedEncryptionEnforcementConfig{
-			RestrictionMode: strPtr(e.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode),
+			RestrictionMode: restrictionMode,
 		}
 	}
 	return ret
@@ -1942,19 +1935,19 @@ func toBucketEncryption(e *raw.BucketEncryption) *BucketEncryption {
 	}
 	ret := &BucketEncryption{DefaultKMSKeyName: e.DefaultKmsKeyName}
 	if e.GoogleManagedEncryptionEnforcementConfig != nil {
-		ret.GoogleManagedEncryptionEnforcementConfig = &GoogleManagedEncryptionEnforcementConfig{
+		ret.GoogleManagedEncryptionEnforcementConfig = &EncryptionEnforcementConfig{
 			RestrictionMode: e.GoogleManagedEncryptionEnforcementConfig.RestrictionMode,
 			EffectiveTime:   convertTime(e.GoogleManagedEncryptionEnforcementConfig.EffectiveTime),
 		}
 	}
 	if e.CustomerManagedEncryptionEnforcementConfig != nil {
-		ret.CustomerManagedEncryptionEnforcementConfig = &CustomerManagedEncryptionEnforcementConfig{
+		ret.CustomerManagedEncryptionEnforcementConfig = &EncryptionEnforcementConfig{
 			RestrictionMode: e.CustomerManagedEncryptionEnforcementConfig.RestrictionMode,
 			EffectiveTime:   convertTime(e.CustomerManagedEncryptionEnforcementConfig.EffectiveTime),
 		}
 	}
 	if e.CustomerSuppliedEncryptionEnforcementConfig != nil {
-		ret.CustomerSuppliedEncryptionEnforcementConfig = &CustomerSuppliedEncryptionEnforcementConfig{
+		ret.CustomerSuppliedEncryptionEnforcementConfig = &EncryptionEnforcementConfig{
 			RestrictionMode: e.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode,
 			EffectiveTime:   convertTime(e.CustomerSuppliedEncryptionEnforcementConfig.EffectiveTime),
 		}
@@ -1968,19 +1961,19 @@ func toBucketEncryptionFromProto(e *storagepb.Bucket_Encryption) *BucketEncrypti
 	}
 	ret := &BucketEncryption{DefaultKMSKeyName: e.GetDefaultKmsKey()}
 	if x := e.GetGoogleManagedEncryptionEnforcementConfig(); x != nil {
-		ret.GoogleManagedEncryptionEnforcementConfig = &GoogleManagedEncryptionEnforcementConfig{
+		ret.GoogleManagedEncryptionEnforcementConfig = &EncryptionEnforcementConfig{
 			RestrictionMode: x.GetRestrictionMode(),
 			EffectiveTime:   x.GetEffectiveTime().AsTime(),
 		}
 	}
 	if x := e.GetCustomerManagedEncryptionEnforcementConfig(); x != nil {
-		ret.CustomerManagedEncryptionEnforcementConfig = &CustomerManagedEncryptionEnforcementConfig{
+		ret.CustomerManagedEncryptionEnforcementConfig = &EncryptionEnforcementConfig{
 			RestrictionMode: x.GetRestrictionMode(),
 			EffectiveTime:   x.GetEffectiveTime().AsTime(),
 		}
 	}
 	if x := e.GetCustomerSuppliedEncryptionEnforcementConfig(); x != nil {
-		ret.CustomerSuppliedEncryptionEnforcementConfig = &CustomerSuppliedEncryptionEnforcementConfig{
+		ret.CustomerSuppliedEncryptionEnforcementConfig = &EncryptionEnforcementConfig{
 			RestrictionMode: x.GetRestrictionMode(),
 			EffectiveTime:   x.GetEffectiveTime().AsTime(),
 		}
@@ -2564,11 +2557,4 @@ func timeToProtoDate(t time.Time) *dpb.Date {
 		Month: int32(t.Month()),
 		Day:   int32(t.Day()),
 	}
-}
-
-func strPtr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }

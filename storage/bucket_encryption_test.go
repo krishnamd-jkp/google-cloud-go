@@ -28,14 +28,14 @@ import (
 func TestBucketEncryption_ToRaw(t *testing.T) {
 	e := &BucketEncryption{
 		DefaultKMSKeyName: "key",
-		GoogleManagedEncryptionEnforcementConfig: &GoogleManagedEncryptionEnforcementConfig{
-			RestrictionMode: "FullyRestricted",
+		GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
+			RestrictionMode: RestrictionModeFullyRestricted,
 		},
-		CustomerManagedEncryptionEnforcementConfig: &CustomerManagedEncryptionEnforcementConfig{
-			RestrictionMode: "NotRestricted",
+		CustomerManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
+			RestrictionMode: RestrictionModeNotRestricted,
 		},
-		CustomerSuppliedEncryptionEnforcementConfig: &CustomerSuppliedEncryptionEnforcementConfig{
-			RestrictionMode: "FullyRestricted",
+		CustomerSuppliedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
+			RestrictionMode: RestrictionModeFullyRestricted,
 		},
 	}
 
@@ -70,8 +70,8 @@ func TestBucketEncryption_FromRaw(t *testing.T) {
 	got := toBucketEncryption(rawE)
 	want := &BucketEncryption{
 		DefaultKMSKeyName: "key",
-		GoogleManagedEncryptionEnforcementConfig: &GoogleManagedEncryptionEnforcementConfig{
-			RestrictionMode: "FullyRestricted",
+		GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
+			RestrictionMode: RestrictionModeFullyRestricted,
 			EffectiveTime:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		},
 	}
@@ -84,8 +84,8 @@ func TestBucketEncryption_FromRaw(t *testing.T) {
 func TestBucketEncryption_ToProto(t *testing.T) {
 	e := &BucketEncryption{
 		DefaultKMSKeyName: "key",
-		GoogleManagedEncryptionEnforcementConfig: &GoogleManagedEncryptionEnforcementConfig{
-			RestrictionMode: "FullyRestricted",
+		GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
+			RestrictionMode: RestrictionModeFullyRestricted,
 		},
 	}
 
@@ -117,8 +117,8 @@ func TestBucketEncryption_FromProto(t *testing.T) {
 	got := toBucketEncryptionFromProto(protoE)
 	want := &BucketEncryption{
 		DefaultKMSKeyName: "key",
-		GoogleManagedEncryptionEnforcementConfig: &GoogleManagedEncryptionEnforcementConfig{
-			RestrictionMode: "FullyRestricted",
+		GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
+			RestrictionMode: RestrictionModeFullyRestricted,
 			EffectiveTime:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		},
 	}
