@@ -1161,7 +1161,6 @@ type BucketEncryption struct {
 // EncryptionEnforcementConfig specifies the enforcement config for encryption.
 type EncryptionEnforcementConfig struct {
 	// RestrictionMode specifies the restriction mode for encryption.
-	// Valid values are "NotRestricted" and "FullyRestricted".
 	RestrictionMode RestrictionMode
 
 	// EffectiveTime is the time from which the policy was enforced and
@@ -1169,6 +1168,7 @@ type EncryptionEnforcementConfig struct {
 	EffectiveTime time.Time
 }
 
+// RestrictionMode specifies the restriction mode for encryption.
 type RestrictionMode string
 
 // RestrictionMode constants.
@@ -1907,8 +1907,8 @@ func (e *BucketEncryption) toProtoBucketEncryption() *storagepb.Bucket_Encryptio
 	if e.GoogleManagedEncryptionEnforcementConfig != nil {
 		var restrictionMode *string
 		if e.GoogleManagedEncryptionEnforcementConfig.RestrictionMode != "" {
-			mode := string(e.GoogleManagedEncryptionEnforcementConfig.RestrictionMode)
-			restrictionMode = &mode
+			s := string(e.GoogleManagedEncryptionEnforcementConfig.RestrictionMode)
+			restrictionMode = &s
 		}
 		ret.GoogleManagedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_GoogleManagedEncryptionEnforcementConfig{
 			RestrictionMode: restrictionMode,
@@ -1917,8 +1917,8 @@ func (e *BucketEncryption) toProtoBucketEncryption() *storagepb.Bucket_Encryptio
 	if e.CustomerManagedEncryptionEnforcementConfig != nil {
 		var restrictionMode *string
 		if e.CustomerManagedEncryptionEnforcementConfig.RestrictionMode != "" {
-			mode := string(e.CustomerManagedEncryptionEnforcementConfig.RestrictionMode)
-			restrictionMode = &mode
+			s := string(e.CustomerManagedEncryptionEnforcementConfig.RestrictionMode)
+			restrictionMode = &s
 		}
 		ret.CustomerManagedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_CustomerManagedEncryptionEnforcementConfig{
 			RestrictionMode: restrictionMode,
@@ -1927,8 +1927,8 @@ func (e *BucketEncryption) toProtoBucketEncryption() *storagepb.Bucket_Encryptio
 	if e.CustomerSuppliedEncryptionEnforcementConfig != nil {
 		var restrictionMode *string
 		if e.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode != "" {
-			mode := string(e.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode)
-			restrictionMode = &mode
+			s := string(e.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode)
+			restrictionMode = &s
 		}
 		ret.CustomerSuppliedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_CustomerSuppliedEncryptionEnforcementConfig{
 			RestrictionMode: restrictionMode,
