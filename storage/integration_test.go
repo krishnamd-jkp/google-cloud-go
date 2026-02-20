@@ -6140,6 +6140,93 @@ func TestIntegration_KMS(t *testing.T) {
 	})
 }
 
+func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
+	ctx := skipExtraReadAPIs(context.Background(), "no reads in test")
+	multiTransportTest(ctx, t, func(t *testing.T, ctx context.Context, _ string, prefix string, client *Client) {
+		h := testHelper{t}
+		bktName := prefix + uidSpace.New()
+		bkt := client.Bucket(bktName)
+
+		// Create bucket with encryption enforcement config
+		encryption := &BucketEncryption{
+			GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
+				RestrictionMode: RestrictionModeFullyRestricted,
+			},
+			CustomerManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
+				RestrictionMode: RestrictionModeNotRestricted,
+			},
+			CustomerSuppliedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
+				RestrictionMode: RestrictionModeFullyRestricted,
+			},
+		}
+
+		h.mustCreate(bkt, testutil.ProjID(), &BucketAttrs{
+			Encryption: encryption,
+		})
+		defer h.mustDeleteBucket(bkt)
+
+		// Verify creation
+		attrs := h.mustBucketAttrs(bkt)
+		if attrs.Encryption == nil {
+			t.Fatal("expected encryption attrs to be set")
+		}
+		if attrs.Encryption.GoogleManagedEncryptionEnforcementConfig == nil {
+			t.Fatal("expected GoogleManagedEncryptionEnforcementConfig to be set")
+		}
+		if got, want := attrs.Encryption.GoogleManagedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeFullyRestricted; got != want {
+			t.Errorf("GoogleManagedEncryptionEnforcementConfig.RestrictionMode: got %q, want %q", got, want)
+		}
+		if attrs.Encryption.CustomerManagedEncryptionEnforcementConfig == nil {
+			t.Fatal("expected CustomerManagedEncryptionEnforcementConfig to be set")
+		}
+		if got, want := attrs.Encryption.CustomerManagedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeNotRestricted; got != want {
+			t.Errorf("CustomerManagedEncryptionEnforcementConfig.RestrictionMode: got %q, want %q", got, want)
+		}
+		if attrs.Encryption.CustomerSuppliedEncryptionEnforcementConfig == nil {
+			t.Fatal("expected CustomerSuppliedEncryptionEnforcementConfig to be set")
+		}
+		if got, want := attrs.Encryption.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeFullyRestricted; got != want {
+			t.Errorf("CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode: got %q, want %q", got, want)
+		}
+
+		// Update encryption enforcement config
+		newEncryption := &BucketEncryption{
+			GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
+				RestrictionMode: RestrictionModeNotRestricted,
+			},
+			CustomerManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
+				RestrictionMode: RestrictionModeFullyRestricted,
+			},
+			CustomerSuppliedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
+				RestrictionMode: RestrictionModeFullyRestricted,
+			},
+		}
+
+		ua := BucketAttrsToUpdate{
+			Encryption: newEncryption,
+		}
+
+		attrs = h.mustUpdateBucket(bkt, ua, attrs.MetaGeneration)
+
+		// Verify update
+		if attrs.Encryption == nil {
+			t.Fatal("expected encryption attrs to be set after update")
+		}
+		if attrs.Encryption.GoogleManagedEncryptionEnforcementConfig == nil {
+			t.Fatal("expected GoogleManagedEncryptionEnforcementConfig to be set after update")
+		}
+		if got, want := attrs.Encryption.GoogleManagedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeNotRestricted; got != want {
+			t.Errorf("GoogleManagedEncryptionEnforcementConfig.RestrictionMode: got %q, want %q", got, want)
+		}
+		if attrs.Encryption.CustomerManagedEncryptionEnforcementConfig == nil {
+			t.Fatal("expected CustomerManagedEncryptionEnforcementConfig to be set after update")
+		}
+		if got, want := attrs.Encryption.CustomerManagedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeFullyRestricted; got != want {
+			t.Errorf("CustomerManagedEncryptionEnforcementConfig.RestrictionMode: got %q, want %q", got, want)
+		}
+	})
+}
+
 func TestIntegration_PredefinedACLs(t *testing.T) {
 	t.Skip("b/453096525")
 	projectOwners := prefixRoleACL{prefix: "project-owners", role: RoleOwner}
@@ -8493,91 +8580,4 @@ func setUpRequesterPaysBucket(ctx context.Context, t *testing.T, bucket, object 
 
 func crc32c(b []byte) uint32 {
 	return crc32.Checksum(b, crc32.MakeTable(crc32.Castagnoli))
-}
-
-func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
-	ctx := skipExtraReadAPIs(context.Background(), "no reads in test")
-	multiTransportTest(ctx, t, func(t *testing.T, ctx context.Context, _ string, prefix string, client *Client) {
-		h := testHelper{t}
-		bktName := prefix + uidSpace.New()
-		bkt := client.Bucket(bktName)
-
-		// Create bucket with encryption enforcement config
-		encryption := &BucketEncryption{
-			GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-				RestrictionMode: RestrictionModeFullyRestricted,
-			},
-			CustomerManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-				RestrictionMode: RestrictionModeNotRestricted,
-			},
-			CustomerSuppliedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-				RestrictionMode: RestrictionModeFullyRestricted,
-			},
-		}
-
-		h.mustCreate(bkt, testutil.ProjID(), &BucketAttrs{
-			Encryption: encryption,
-		})
-		defer h.mustDeleteBucket(bkt)
-
-		// Verify creation
-		attrs := h.mustBucketAttrs(bkt)
-		if attrs.Encryption == nil {
-			t.Fatal("expected encryption attrs to be set")
-		}
-		if attrs.Encryption.GoogleManagedEncryptionEnforcementConfig == nil {
-			t.Fatal("expected GoogleManagedEncryptionEnforcementConfig to be set")
-		}
-		if got, want := attrs.Encryption.GoogleManagedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeFullyRestricted; got != want {
-			t.Errorf("GoogleManagedEncryptionEnforcementConfig.RestrictionMode: got %q, want %q", got, want)
-		}
-		if attrs.Encryption.CustomerManagedEncryptionEnforcementConfig == nil {
-			t.Fatal("expected CustomerManagedEncryptionEnforcementConfig to be set")
-		}
-		if got, want := attrs.Encryption.CustomerManagedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeNotRestricted; got != want {
-			t.Errorf("CustomerManagedEncryptionEnforcementConfig.RestrictionMode: got %q, want %q", got, want)
-		}
-		if attrs.Encryption.CustomerSuppliedEncryptionEnforcementConfig == nil {
-			t.Fatal("expected CustomerSuppliedEncryptionEnforcementConfig to be set")
-		}
-		if got, want := attrs.Encryption.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeFullyRestricted; got != want {
-			t.Errorf("CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode: got %q, want %q", got, want)
-		}
-
-		// Update encryption enforcement config
-		newEncryption := &BucketEncryption{
-			GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-				RestrictionMode: RestrictionModeNotRestricted,
-			},
-			CustomerManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-				RestrictionMode: RestrictionModeFullyRestricted,
-			},
-			CustomerSuppliedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-				RestrictionMode: RestrictionModeFullyRestricted,
-			},
-		}
-
-		ua := BucketAttrsToUpdate{
-			Encryption: newEncryption,
-		}
-
-		attrs = h.mustUpdateBucket(bkt, ua, attrs.MetaGeneration)
-
-		// Verify update
-		if attrs.Encryption == nil {
-			t.Fatal("expected encryption attrs to be set after update")
-		}
-		if attrs.Encryption.GoogleManagedEncryptionEnforcementConfig == nil {
-			t.Fatal("expected GoogleManagedEncryptionEnforcementConfig to be set after update")
-		}
-		if got, want := attrs.Encryption.GoogleManagedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeNotRestricted; got != want {
-			t.Errorf("GoogleManagedEncryptionEnforcementConfig.RestrictionMode: got %q, want %q", got, want)
-		}
-		if attrs.Encryption.CustomerManagedEncryptionEnforcementConfig == nil {
-			t.Fatal("expected CustomerManagedEncryptionEnforcementConfig to be set after update")
-		}
-		if got, want := attrs.Encryption.CustomerManagedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeFullyRestricted; got != want {
-			t.Errorf("CustomerManagedEncryptionEnforcementConfig.RestrictionMode: got %q, want %q", got, want)
-		}
-	})
 }
