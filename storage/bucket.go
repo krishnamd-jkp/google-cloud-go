@@ -1169,6 +1169,8 @@ type EncryptionEnforcementConfig struct {
 	EffectiveTime time.Time
 }
 
+// RestrictionMode is the restriction mode for encryption.
+// It shoud be either "NotRestricted" or "FullyRestricted"
 type RestrictionMode string
 
 // RestrictionMode constants.
