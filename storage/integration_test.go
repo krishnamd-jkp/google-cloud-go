@@ -6222,10 +6222,10 @@ func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
 			t.Errorf("CustomerManagedEncryptionEnforcementConfig.RestrictionMode (after update): got %q, want %q", got, want)
 		}
 		if attrs.Encryption.CustomerSuppliedEncryptionEnforcementConfig == nil {
-			t.Fatal("expected CustomerManagedEncryptionEnforcementConfig to be set after update")
+			t.Fatal("expected CustomerSuppliedEncryptionEnforcementConfig to be set after update")
 		}
 		if got, want := attrs.Encryption.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeFullyRestricted; got != want {
-			t.Errorf("CustomerManagedEncryptionEnforcementConfig.RestrictionMode (after update): got %q, want %q", got, want)
+			t.Errorf("CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode (after update): got %q, want %q", got, want)
 		}
 	})
 }

@@ -429,7 +429,7 @@ func (c *grpcStorageClient) UpdateBucket(ctx context.Context, bucket string, uat
 	}
 	if uattrs.Encryption != nil {
 		if uattrs.Encryption.DefaultKMSKeyName != "" || uattrs.Encryption.DeleteDefaultKMSKeyName {
-			fieldMask.Paths = append(fieldMask.Paths, "encryption.kms_key_name")
+			fieldMask.Paths = append(fieldMask.Paths, "encryption.default_kms_key")
 		}
 		if uattrs.Encryption.CustomerManagedEncryptionEnforcementConfig != nil {
 			fieldMask.Paths = append(fieldMask.Paths, "encryption.customer_managed_encryption_enforcement_config")
