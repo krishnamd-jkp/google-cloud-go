@@ -90,8 +90,8 @@ const (
 	testUniverseLocation   = "TEST_UNIVERSE_LOCATION"
 	testUniverseCreds      = "TEST_UNIVERSE_DOMAIN_CREDENTIAL"
 	// Location and Zone for zonal buckets tests
-	testZonalLocation = "us-west4"
-	testZonalZone     = "us-west4-a"
+	testZonalLocation = "us-central1"
+	testZonalZone     = "us-central1-a"
 )
 
 var (
@@ -6133,7 +6133,7 @@ func TestIntegration_KMS(t *testing.T) {
 		}
 
 		// Remove the default KMS key.
-		attrs = h.mustUpdateBucket(bkt, BucketAttrsToUpdate{Encryption: &BucketEncryption{DefaultKMSKeyName: ""}}, attrs.MetaGeneration)
+		attrs = h.mustUpdateBucket(bkt, BucketAttrsToUpdate{Encryption: &BucketEncryption{DeleteDefaultKMSKeyName: true}}, attrs.MetaGeneration)
 		if attrs.Encryption != nil {
 			t.Fatalf("got %#v, want nil", attrs.Encryption)
 		}
@@ -6197,9 +6197,6 @@ func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
 			CustomerManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
 				RestrictionMode: RestrictionModeFullyRestricted,
 			},
-			CustomerSuppliedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-				RestrictionMode: RestrictionModeFullyRestricted,
-			},
 		}
 
 		ua := BucketAttrsToUpdate{
@@ -6208,7 +6205,7 @@ func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
 
 		attrs = h.mustUpdateBucket(bkt, ua, attrs.MetaGeneration)
 
-		// Verify update
+		// Verify update from attrs.
 		if attrs.Encryption == nil {
 			t.Fatal("expected encryption attrs to be set after update")
 		}
@@ -6216,13 +6213,19 @@ func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
 			t.Fatal("expected GoogleManagedEncryptionEnforcementConfig to be set after update")
 		}
 		if got, want := attrs.Encryption.GoogleManagedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeNotRestricted; got != want {
-			t.Errorf("GoogleManagedEncryptionEnforcementConfig.RestrictionMode: got %q, want %q", got, want)
+			t.Errorf("GoogleManagedEncryptionEnforcementConfig.RestrictionMode (after update): got %q, want %q", got, want)
 		}
 		if attrs.Encryption.CustomerManagedEncryptionEnforcementConfig == nil {
 			t.Fatal("expected CustomerManagedEncryptionEnforcementConfig to be set after update")
 		}
 		if got, want := attrs.Encryption.CustomerManagedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeFullyRestricted; got != want {
-			t.Errorf("CustomerManagedEncryptionEnforcementConfig.RestrictionMode: got %q, want %q", got, want)
+			t.Errorf("CustomerManagedEncryptionEnforcementConfig.RestrictionMode (after update): got %q, want %q", got, want)
+		}
+		if attrs.Encryption.CustomerSuppliedEncryptionEnforcementConfig == nil {
+			t.Fatal("expected CustomerManagedEncryptionEnforcementConfig to be set after update")
+		}
+		if got, want := attrs.Encryption.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeFullyRestricted; got != want {
+			t.Errorf("CustomerManagedEncryptionEnforcementConfig.RestrictionMode (after update): got %q, want %q", got, want)
 		}
 	})
 }

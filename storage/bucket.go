@@ -1145,6 +1145,9 @@ type BucketEncryption struct {
 	// The key's location must be the same as the bucket's.
 	DefaultKMSKeyName string
 
+	// DeleteDefaultKMSKeyName deletes the DefaultKMSKeyName.
+	DeleteDefaultKMSKeyName bool
+
 	// GoogleManagedEncryptionEnforcementConfig specifies the enforcement config
 	// for Google Managed Encryption.
 	GoogleManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
@@ -1170,7 +1173,7 @@ type EncryptionEnforcementConfig struct {
 }
 
 // RestrictionMode is the restriction mode for encryption.
-// It shoud be either "NotRestricted" or "FullyRestricted"
+// It should be either "NotRestricted" or "FullyRestricted"
 type RestrictionMode string
 
 // RestrictionMode constants.
@@ -1356,10 +1359,7 @@ func (ua *BucketAttrsToUpdate) toRawBucket() *raw.Bucket {
 		rb.IamConfiguration.PublicAccessPrevention = ua.PublicAccessPrevention.String()
 	}
 	if ua.Encryption != nil {
-		if ua.Encryption.DefaultKMSKeyName == "" &&
-			ua.Encryption.GoogleManagedEncryptionEnforcementConfig == nil &&
-			ua.Encryption.CustomerManagedEncryptionEnforcementConfig == nil &&
-			ua.Encryption.CustomerSuppliedEncryptionEnforcementConfig == nil {
+		if *ua.Encryption == (BucketEncryption{}) {
 			rb.NullFields = append(rb.NullFields, "Encryption")
 			rb.Encryption = nil
 		} else {
@@ -1881,6 +1881,9 @@ func (e *BucketEncryption) toRawBucketEncryption() *raw.BucketEncryption {
 	ret := &raw.BucketEncryption{
 		DefaultKmsKeyName: e.DefaultKMSKeyName,
 	}
+	if e.DeleteDefaultKMSKeyName {
+		ret.NullFields = append(ret.NullFields, "DefaultKmsKeyName")
+	}
 	if e.GoogleManagedEncryptionEnforcementConfig != nil {
 		ret.GoogleManagedEncryptionEnforcementConfig = &raw.BucketEncryptionGoogleManagedEncryptionEnforcementConfig{
 			RestrictionMode: string(e.GoogleManagedEncryptionEnforcementConfig.RestrictionMode),
@@ -1907,33 +1910,18 @@ func (e *BucketEncryption) toProtoBucketEncryption() *storagepb.Bucket_Encryptio
 		DefaultKmsKey: e.DefaultKMSKeyName,
 	}
 	if e.GoogleManagedEncryptionEnforcementConfig != nil {
-		var restrictionMode *string
-		if e.GoogleManagedEncryptionEnforcementConfig.RestrictionMode != "" {
-			mode := string(e.GoogleManagedEncryptionEnforcementConfig.RestrictionMode)
-			restrictionMode = &mode
-		}
 		ret.GoogleManagedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_GoogleManagedEncryptionEnforcementConfig{
-			RestrictionMode: restrictionMode,
+			RestrictionMode: toProtoRestrictionMode(e.GoogleManagedEncryptionEnforcementConfig.RestrictionMode),
 		}
 	}
 	if e.CustomerManagedEncryptionEnforcementConfig != nil {
-		var restrictionMode *string
-		if e.CustomerManagedEncryptionEnforcementConfig.RestrictionMode != "" {
-			mode := string(e.CustomerManagedEncryptionEnforcementConfig.RestrictionMode)
-			restrictionMode = &mode
-		}
 		ret.CustomerManagedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_CustomerManagedEncryptionEnforcementConfig{
-			RestrictionMode: restrictionMode,
+			RestrictionMode: toProtoRestrictionMode(e.CustomerManagedEncryptionEnforcementConfig.RestrictionMode),
 		}
 	}
 	if e.CustomerSuppliedEncryptionEnforcementConfig != nil {
-		var restrictionMode *string
-		if e.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode != "" {
-			mode := string(e.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode)
-			restrictionMode = &mode
-		}
 		ret.CustomerSuppliedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_CustomerSuppliedEncryptionEnforcementConfig{
-			RestrictionMode: restrictionMode,
+			RestrictionMode: toProtoRestrictionMode(e.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode),
 		}
 	}
 	return ret
@@ -2549,6 +2537,14 @@ func (rpo RPO) String() string {
 // Hours, minutes, seconds, and nanoseconds are set to 0.
 func protoDateToUTCTime(d *dpb.Date) time.Time {
 	return protoDateToTime(d, time.UTC)
+}
+
+func toProtoRestrictionMode(rm RestrictionMode) *string {
+	if rm == "" {
+		return nil
+	}
+	s := string(rm)
+	return &s
 }
 
 // protoDateToTime returns a new Time based on the google.type.Date and provided
