@@ -329,16 +329,14 @@ type mrdAddStreamErrorCmd struct {
 func (c *mrdAddStreamErrorCmd) apply(ctx context.Context, m *multiRangeDownloaderManager) {
 	m.streamCreating = false
 	if len(m.streams) == 0 {
-		finalErr := c.err
-		if finalErr == nil {
-			finalErr = m.getPermanentError()
+		var err error
+		if c.err != nil {
+			err = fmt.Errorf("no streams available. Last observed error: %w", c.err)
+		} else {
+			err = errors.New("no streams available")
 		}
-		if finalErr == nil {
-			finalErr = errNoStreams
-		}
-		m.setPermanentError(finalErr)
-		m.failAllPending(finalErr)
-		m.cancel()
+		m.setPermanentError(err)
+		m.failAllPending(m.getPermanentError())
 	}
 }
 
@@ -587,7 +585,7 @@ func (m *multiRangeDownloaderManager) eventLoop() {
 			m.addNewStream()
 		}
 		// Notify waiters if all ranges are done.
-		if m.pendingRangesCount <= 0 && m.unsentRequests.Len() == 0 {
+		if m.pendingRangesCount == 0 && m.unsentRequests.Len() == 0 {
 			for _, waiter := range m.waiters {
 				close(waiter)
 			}
@@ -837,7 +835,7 @@ func (m *multiRangeDownloaderManager) handleWaitCmd(ctx context.Context, cmd *mr
 	// unsentRequests could be non-empty when eventLoop is busy
 	// in select statements other than Add commands and cleared up
 	// existing pending ranges.
-	if m.pendingRangesCount <= 0 && m.unsentRequests.Len() == 0 {
+	if m.pendingRangesCount == 0 && m.unsentRequests.Len() == 0 {
 		close(cmd.doneC)
 	} else {
 		m.waiters = append(m.waiters, cmd.doneC)
@@ -866,11 +864,8 @@ func (m *multiRangeDownloaderManager) handleReconnectStreamCmd(ctx context.Conte
 	if cmd.err != nil {
 		m.failStream(stream, cmd.err)
 		if len(m.streams) == 0 && !m.streamCreating {
-			if !errors.Is(cmd.err, context.Canceled) && !errors.Is(cmd.err, errClosed) {
-				m.setPermanentError(cmd.err)
-			} else if m.getPermanentError() == nil {
-				m.setPermanentError(errNoStreams)
-			}
+			err := fmt.Errorf("no streams available. Last observed error: %w", cmd.err)
+			m.setPermanentError(err)
 			m.failAllPending(m.getPermanentError())
 		}
 		return
@@ -1038,12 +1033,8 @@ func (m *multiRangeDownloaderManager) handleStreamEnd(result mrdSessionResult, s
 	} else {
 		m.failStream(stream, err)
 		if len(m.streams) == 0 && !m.streamCreating {
-
-			if !errors.Is(err, context.Canceled) && !errors.Is(err, errClosed) {
-				m.setPermanentError(err)
-			} else if m.getPermanentError() == nil {
-				m.setPermanentError(errNoStreams)
-			}
+			err := fmt.Errorf("no streams available. Last observed error: %w", err)
+			m.setPermanentError(err)
 			m.failAllPending(m.getPermanentError())
 		}
 	}
@@ -1065,14 +1056,16 @@ func (m *multiRangeDownloaderManager) failRange(mrdStream *mrdStream, req *range
 
 func (m *multiRangeDownloaderManager) failStream(mrdStream *mrdStream, err error) {
 	totalBytes := int64(0)
+	pendingRanges := 0
 	for _, req := range mrdStream.pendingRanges {
 		if !req.completed {
 			totalBytes += req.length - req.bytesWritten
+			pendingRanges++
 			req.completed = true
 			m.runCallback(req.origOffset, req.bytesWritten, err, req.callback)
 		}
 	}
-	mrdStream.updateCapacity(m, -len(mrdStream.pendingRanges), -totalBytes)
+	mrdStream.updateCapacity(m, -pendingRanges, -totalBytes)
 	mrdStream.pendingRanges = make(map[int64]*rangeRequest)
 	delete(m.streams, mrdStream.id)
 }
