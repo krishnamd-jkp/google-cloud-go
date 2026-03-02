@@ -2160,7 +2160,7 @@ func TestIntegration_MultiChunkWrite(t *testing.T) {
 
 func TestIntegration_WriterCRC32CValidation(t *testing.T) {
 	ctx := skipZonalBucket(context.Background(), "Test for resumable and oneshot writers")
-	ctx = skipExtraReadAPIs(context.Background(), "Test for uploads")
+	ctx = skipExtraReadAPIs(ctx, "Test for uploads")
 
 	h := testHelper{t}
 	multiTransportTest(ctx, t, func(t *testing.T, ctx context.Context, bucket string, _ string, client *Client) {
