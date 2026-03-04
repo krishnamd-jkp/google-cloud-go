@@ -481,9 +481,12 @@ func TestBucketAttrsToUpdateToRawBucket(t *testing.T) {
 	}
 	got = au3.toRawBucket()
 	want = &raw.Bucket{
-		NullFields: []string{"RetentionPolicy", "Encryption", "Logging", "Website"},
+		NullFields: []string{"RetentionPolicy", "Logging", "Website"},
 		SoftDeletePolicy: &raw.BucketSoftDeletePolicy{
 			ForceSendFields: []string{"RetentionDurationSeconds"},
+		},
+		Encryption: &raw.BucketEncryption{
+			NullFields: []string{"DefaultKmsKeyName"},
 		},
 	}
 	if msg := testutil.Diff(got, want); msg != "" {

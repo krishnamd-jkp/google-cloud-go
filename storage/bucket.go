@@ -1941,23 +1941,31 @@ func (b *BucketAttrsToUpdate) toProtoBucketEncryption() *storagepb.Bucket_Encryp
 
 func toProtoEncryption(e *BucketEncryption, gme, cme, cse *EncryptionEnforcementConfig) *storagepb.Bucket_Encryption {
 	ret := &storagepb.Bucket_Encryption{}
+	update := false
 	if e != nil {
+		update = true
 		ret.DefaultKmsKey = e.DefaultKMSKeyName
 	}
 	if gme != nil {
+		update = true
 		ret.GoogleManagedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_GoogleManagedEncryptionEnforcementConfig{
 			RestrictionMode: toProtoRestrictionMode(gme.RestrictionMode),
 		}
 	}
 	if cme != nil {
+		update = true
 		ret.CustomerManagedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_CustomerManagedEncryptionEnforcementConfig{
 			RestrictionMode: toProtoRestrictionMode(cme.RestrictionMode),
 		}
 	}
 	if cse != nil {
+		update = true
 		ret.CustomerSuppliedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_CustomerSuppliedEncryptionEnforcementConfig{
 			RestrictionMode: toProtoRestrictionMode(cse.RestrictionMode),
 		}
+	}
+	if !update {
+		return nil
 	}
 	return ret
 }
