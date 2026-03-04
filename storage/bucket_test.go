@@ -1795,6 +1795,9 @@ func TestBucketIterator_PartialSuccess(t *testing.T) {
 func TestBucketEncryption_ToRaw(t *testing.T) {
 	e := &BucketEncryption{
 		DefaultKMSKeyName: "key",
+	}
+	bAttrs := &BucketAttrs{
+		Encryption: e,
 		GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
 			RestrictionMode: RestrictionModeFullyRestricted,
 		},
@@ -1806,7 +1809,7 @@ func TestBucketEncryption_ToRaw(t *testing.T) {
 		},
 	}
 
-	got := e.toRawBucketEncryption()
+	got := bAttrs.toRawBucketEncryption()
 	want := &raw.BucketEncryption{
 		DefaultKmsKeyName: "key",
 		GoogleManagedEncryptionEnforcementConfig: &raw.BucketEncryptionGoogleManagedEncryptionEnforcementConfig{
@@ -1837,31 +1840,50 @@ func TestBucketEncryption_FromRaw(t *testing.T) {
 	got := toBucketEncryption(rawE)
 	want := &BucketEncryption{
 		DefaultKMSKeyName: "key",
-		GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-			RestrictionMode: RestrictionModeFullyRestricted,
-			EffectiveTime:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		},
 	}
-
 	if diff := cmp.Diff(got, want); diff != "" {
 		t.Errorf("toBucketEncryption mismatch (-got +want):\n%s", diff)
+	}
+
+	gotGMEK := toGoogleManagedEncryptionEnforcementConfig(rawE)
+	wantGMEK := &EncryptionEnforcementConfig{
+		RestrictionMode: RestrictionModeFullyRestricted,
+		EffectiveTime:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+	if diff := cmp.Diff(gotGMEK, wantGMEK); diff != "" {
+		t.Errorf("toGoogleManagedEncryptionEnforcementConfig mismatch (-got +want):\n%s", diff)
 	}
 }
 
 func TestBucketEncryption_ToProto(t *testing.T) {
 	e := &BucketEncryption{
 		DefaultKMSKeyName: "key",
+	}
+	bAttrs := &BucketAttrs{
+		Encryption: e,
 		GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
+			RestrictionMode: RestrictionModeFullyRestricted,
+		},
+		CustomerManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
+			RestrictionMode: RestrictionModeNotRestricted,
+		},
+		CustomerSuppliedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
 			RestrictionMode: RestrictionModeFullyRestricted,
 		},
 	}
 
-	got := e.toProtoBucketEncryption()
+	got := bAttrs.toProtoBucketEncryption()
 	// Helper to create string pointer
 	s := func(s string) *string { return &s }
 	want := &storagepb.Bucket_Encryption{
 		DefaultKmsKey: "key",
 		GoogleManagedEncryptionEnforcementConfig: &storagepb.Bucket_Encryption_GoogleManagedEncryptionEnforcementConfig{
+			RestrictionMode: s("FullyRestricted"),
+		},
+		CustomerManagedEncryptionEnforcementConfig: &storagepb.Bucket_Encryption_CustomerManagedEncryptionEnforcementConfig{
+			RestrictionMode: s("NotRestricted"),
+		},
+		CustomerSuppliedEncryptionEnforcementConfig: &storagepb.Bucket_Encryption_CustomerSuppliedEncryptionEnforcementConfig{
 			RestrictionMode: s("FullyRestricted"),
 		},
 	}
@@ -1884,13 +1906,17 @@ func TestBucketEncryption_FromProto(t *testing.T) {
 	got := toBucketEncryptionFromProto(protoE)
 	want := &BucketEncryption{
 		DefaultKMSKeyName: "key",
-		GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-			RestrictionMode: RestrictionModeFullyRestricted,
-			EffectiveTime:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-		},
 	}
-
 	if diff := cmp.Diff(got, want); diff != "" {
 		t.Errorf("toBucketEncryptionFromProto mismatch (-got +want):\n%s", diff)
+	}
+
+	gotGMEK := toGoogleManagedEncryptionEnforcementConfigFromProto(protoE)
+	wantGMEK := &EncryptionEnforcementConfig{
+		RestrictionMode: RestrictionModeFullyRestricted,
+		EffectiveTime:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+	if diff := cmp.Diff(gotGMEK, wantGMEK); diff != "" {
+		t.Errorf("toGoogleManagedEncryptionEnforcementConfig mismatch (-got +want):\n%s", diff)
 	}
 }

@@ -467,6 +467,21 @@ type BucketAttrs struct {
 	// The encryption configuration used by default for newly inserted objects.
 	Encryption *BucketEncryption
 
+	// GoogleManagedEncryptionEnforcementConfig specifies the enforcement config
+	// for Google Managed Encryption. Pass "NotRestricted" in Restriction mode
+	// to unset the configuration.
+	GoogleManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
+
+	// CustomerManagedEncryptionEnforcementConfig specifies the enforcement config
+	// for Customer Managed Encryption. Pass "NotRestricted" in Restriction mode
+	// to unset the configuration.
+	CustomerManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
+
+	// CustomerSuppliedEncryptionEnforcementConfig specifies the enforcement config
+	// for Customer Supplied Encryption. Pass "NotRestricted" in Restriction mode
+	// to unset the configuration.
+	CustomerSuppliedEncryptionEnforcementConfig *EncryptionEnforcementConfig
+
 	// The logging configuration.
 	Logging *BucketLogging
 
@@ -842,23 +857,26 @@ func newBucket(b *raw.Bucket) (*BucketAttrs, error) {
 	}
 
 	return &BucketAttrs{
-		Name:                     b.Name,
-		Location:                 b.Location,
-		MetaGeneration:           b.Metageneration,
-		DefaultEventBasedHold:    b.DefaultEventBasedHold,
-		StorageClass:             b.StorageClass,
-		Created:                  convertTime(b.TimeCreated),
-		Updated:                  convertTime(b.Updated),
-		VersioningEnabled:        b.Versioning != nil && b.Versioning.Enabled,
-		ACL:                      toBucketACLRules(b.Acl),
-		DefaultObjectACL:         toObjectACLRules(b.DefaultObjectAcl),
-		Labels:                   b.Labels,
-		RequesterPays:            b.Billing != nil && b.Billing.RequesterPays,
-		Lifecycle:                toLifecycle(b.Lifecycle),
-		RetentionPolicy:          rp,
-		ObjectRetentionMode:      toBucketObjectRetention(b.ObjectRetention),
-		CORS:                     toCORS(b.Cors),
-		Encryption:               toBucketEncryption(b.Encryption),
+		Name:                                     b.Name,
+		Location:                                 b.Location,
+		MetaGeneration:                           b.Metageneration,
+		DefaultEventBasedHold:                    b.DefaultEventBasedHold,
+		StorageClass:                             b.StorageClass,
+		Created:                                  convertTime(b.TimeCreated),
+		Updated:                                  convertTime(b.Updated),
+		VersioningEnabled:                        b.Versioning != nil && b.Versioning.Enabled,
+		ACL:                                      toBucketACLRules(b.Acl),
+		DefaultObjectACL:                         toObjectACLRules(b.DefaultObjectAcl),
+		Labels:                                   b.Labels,
+		RequesterPays:                            b.Billing != nil && b.Billing.RequesterPays,
+		Lifecycle:                                toLifecycle(b.Lifecycle),
+		RetentionPolicy:                          rp,
+		ObjectRetentionMode:                      toBucketObjectRetention(b.ObjectRetention),
+		CORS:                                     toCORS(b.Cors),
+		Encryption:                               toBucketEncryption(b.Encryption),
+		GoogleManagedEncryptionEnforcementConfig: toGoogleManagedEncryptionEnforcementConfig(b.Encryption),
+		CustomerManagedEncryptionEnforcementConfig:  toCustomerManagedEncryptionEnforcementConfig(b.Encryption),
+		CustomerSuppliedEncryptionEnforcementConfig: toCustomerSuppliedEncryptionEnforcementConfig(b.Encryption),
 		Logging:                  toBucketLogging(b.Logging),
 		Website:                  toBucketWebsite(b.Website),
 		BucketPolicyOnly:         toBucketPolicyOnly(b.IamConfiguration),
@@ -881,22 +899,25 @@ func newBucketFromProto(b *storagepb.Bucket) *BucketAttrs {
 		return nil
 	}
 	return &BucketAttrs{
-		Name:                     parseBucketName(b.GetName()),
-		Location:                 b.GetLocation(),
-		MetaGeneration:           b.GetMetageneration(),
-		DefaultEventBasedHold:    b.GetDefaultEventBasedHold(),
-		StorageClass:             b.GetStorageClass(),
-		Created:                  b.GetCreateTime().AsTime(),
-		Updated:                  b.GetUpdateTime().AsTime(),
-		VersioningEnabled:        b.GetVersioning().GetEnabled(),
-		ACL:                      toBucketACLRulesFromProto(b.GetAcl()),
-		DefaultObjectACL:         toObjectACLRulesFromProto(b.GetDefaultObjectAcl()),
-		Labels:                   b.GetLabels(),
-		RequesterPays:            b.GetBilling().GetRequesterPays(),
-		Lifecycle:                toLifecycleFromProto(b.GetLifecycle()),
-		RetentionPolicy:          toRetentionPolicyFromProto(b.GetRetentionPolicy()),
-		CORS:                     toCORSFromProto(b.GetCors()),
-		Encryption:               toBucketEncryptionFromProto(b.GetEncryption()),
+		Name:                                     parseBucketName(b.GetName()),
+		Location:                                 b.GetLocation(),
+		MetaGeneration:                           b.GetMetageneration(),
+		DefaultEventBasedHold:                    b.GetDefaultEventBasedHold(),
+		StorageClass:                             b.GetStorageClass(),
+		Created:                                  b.GetCreateTime().AsTime(),
+		Updated:                                  b.GetUpdateTime().AsTime(),
+		VersioningEnabled:                        b.GetVersioning().GetEnabled(),
+		ACL:                                      toBucketACLRulesFromProto(b.GetAcl()),
+		DefaultObjectACL:                         toObjectACLRulesFromProto(b.GetDefaultObjectAcl()),
+		Labels:                                   b.GetLabels(),
+		RequesterPays:                            b.GetBilling().GetRequesterPays(),
+		Lifecycle:                                toLifecycleFromProto(b.GetLifecycle()),
+		RetentionPolicy:                          toRetentionPolicyFromProto(b.GetRetentionPolicy()),
+		CORS:                                     toCORSFromProto(b.GetCors()),
+		Encryption:                               toBucketEncryptionFromProto(b.GetEncryption()),
+		GoogleManagedEncryptionEnforcementConfig: toGoogleManagedEncryptionEnforcementConfigFromProto(b.GetEncryption()),
+		CustomerManagedEncryptionEnforcementConfig:  toCustomerManagedEncryptionEnforcementConfigFromProto(b.GetEncryption()),
+		CustomerSuppliedEncryptionEnforcementConfig: toCustomerSuppliedEncryptionEnforcementConfigFromProto(b.GetEncryption()),
 		Logging:                  toBucketLoggingFromProto(b.GetLogging()),
 		Website:                  toBucketWebsiteFromProto(b.GetWebsite()),
 		BucketPolicyOnly:         toBucketPolicyOnlyFromProto(b.GetIamConfig()),
@@ -958,7 +979,7 @@ func (b *BucketAttrs) toRawBucket() *raw.Bucket {
 		Lifecycle:             toRawLifecycle(b.Lifecycle),
 		RetentionPolicy:       b.RetentionPolicy.toRawRetentionPolicy(),
 		Cors:                  toRawCORS(b.CORS),
-		Encryption:            b.Encryption.toRawBucketEncryption(),
+		Encryption:            b.toRawBucketEncryption(),
 		Logging:               b.Logging.toRawBucketLogging(),
 		Website:               b.Website.toRawBucketWebsite(),
 		IamConfiguration:      bktIAM,
@@ -1020,7 +1041,7 @@ func (b *BucketAttrs) toProtoBucket() *storagepb.Bucket {
 		Lifecycle:             toProtoLifecycle(b.Lifecycle),
 		RetentionPolicy:       b.RetentionPolicy.toProtoRetentionPolicy(),
 		Cors:                  toProtoCORS(b.CORS),
-		Encryption:            b.Encryption.toProtoBucketEncryption(),
+		Encryption:            b.toProtoBucketEncryption(),
 		Logging:               b.Logging.toProtoBucketLogging(),
 		Website:               b.Website.toProtoBucketWebsite(),
 		IamConfig:             bktIAM,
@@ -1104,7 +1125,7 @@ func (ua *BucketAttrsToUpdate) toProtoBucket() *storagepb.Bucket {
 		Lifecycle:             toProtoLifecycle(lifecycle),
 		RetentionPolicy:       ua.RetentionPolicy.toProtoRetentionPolicy(),
 		Cors:                  toProtoCORS(ua.CORS),
-		Encryption:            ua.Encryption.toProtoBucketEncryption(),
+		Encryption:            ua.toProtoBucketEncryption(),
 		Logging:               ua.Logging.toProtoBucketLogging(),
 		Website:               ua.Website.toProtoBucketWebsite(),
 		IamConfig:             bktIAM,
@@ -1144,21 +1165,6 @@ type BucketEncryption struct {
 	// objects inserted into this bucket, if no encryption method is specified.
 	// The key's location must be the same as the bucket's.
 	DefaultKMSKeyName string
-
-	// DeleteDefaultKMSKeyName deletes the DefaultKMSKeyName.
-	DeleteDefaultKMSKeyName bool
-
-	// GoogleManagedEncryptionEnforcementConfig specifies the enforcement config
-	// for Google Managed Encryption.
-	GoogleManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
-
-	// CustomerManagedEncryptionEnforcementConfig specifies the enforcement config
-	// for Customer Managed Encryption.
-	CustomerManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
-
-	// CustomerSuppliedEncryptionEnforcementConfig specifies the enforcement config
-	// for Customer Supplied Encryption.
-	CustomerSuppliedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 }
 
 // EncryptionEnforcementConfig specifies the enforcement config for encryption.
@@ -1239,6 +1245,21 @@ type BucketAttrsToUpdate struct {
 	// BucketEncryption.DefaultKMSKeyName = "" will delete the existing
 	// configuration.
 	Encryption *BucketEncryption
+
+	// GoogleManagedEncryptionEnforcementConfig specifies the enforcement config
+	// for Google Managed Encryption. Pass "NotRestricted" in Restriction mode
+	// to unset the configuration.
+	GoogleManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
+
+	// CustomerManagedEncryptionEnforcementConfig specifies the enforcement config
+	// for Customer Managed Encryption. Pass "NotRestricted" in Restriction mode
+	// to unset the configuration.
+	CustomerManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
+
+	// CustomerSuppliedEncryptionEnforcementConfig specifies the enforcement config
+	// for Customer Supplied Encryption. Pass "NotRestricted" in Restriction mode
+	// to unset the configuration.
+	CustomerSuppliedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 
 	// If set, replaces the lifecycle configuration of the bucket.
 	Lifecycle *Lifecycle
@@ -1358,14 +1379,7 @@ func (ua *BucketAttrsToUpdate) toRawBucket() *raw.Bucket {
 		}
 		rb.IamConfiguration.PublicAccessPrevention = ua.PublicAccessPrevention.String()
 	}
-	if ua.Encryption != nil {
-		if *ua.Encryption == (BucketEncryption{}) {
-			rb.NullFields = append(rb.NullFields, "Encryption")
-			rb.Encryption = nil
-		} else {
-			rb.Encryption = ua.Encryption.toRawBucketEncryption()
-		}
-	}
+	rb.Encryption = ua.toRawBucketEncryption()
 	if ua.Lifecycle != nil {
 		rb.Lifecycle = toRawLifecycle(*ua.Lifecycle)
 		rb.ForceSendFields = append(rb.ForceSendFields, "Lifecycle")
@@ -1874,54 +1888,75 @@ func toLifecycleFromProto(rl *storagepb.Bucket_Lifecycle) Lifecycle {
 	return l
 }
 
-func (e *BucketEncryption) toRawBucketEncryption() *raw.BucketEncryption {
-	if e == nil {
-		return nil
+func (b *BucketAttrs) toRawBucketEncryption() *raw.BucketEncryption {
+	return toRawBucketEncryption(b.Encryption, b.GoogleManagedEncryptionEnforcementConfig, b.CustomerManagedEncryptionEnforcementConfig, b.CustomerSuppliedEncryptionEnforcementConfig)
+}
+
+func (b *BucketAttrsToUpdate) toRawBucketEncryption() *raw.BucketEncryption {
+	return toRawBucketEncryption(b.Encryption, b.GoogleManagedEncryptionEnforcementConfig, b.CustomerManagedEncryptionEnforcementConfig, b.CustomerSuppliedEncryptionEnforcementConfig)
+}
+
+func toRawBucketEncryption(e *BucketEncryption, gme, cme, cse *EncryptionEnforcementConfig) *raw.BucketEncryption {
+	ret := &raw.BucketEncryption{}
+	update := false
+	if e != nil {
+		update = true
+		if e.DefaultKMSKeyName != "" {
+			ret.DefaultKmsKeyName = e.DefaultKMSKeyName
+		} else {
+			ret.NullFields = append(ret.NullFields, "DefaultKmsKeyName")
+		}
 	}
-	ret := &raw.BucketEncryption{
-		DefaultKmsKeyName: e.DefaultKMSKeyName,
-	}
-	if e.DeleteDefaultKMSKeyName {
-		ret.NullFields = append(ret.NullFields, "DefaultKmsKeyName")
-	}
-	if e.GoogleManagedEncryptionEnforcementConfig != nil {
+	if gme != nil {
+		update = true
 		ret.GoogleManagedEncryptionEnforcementConfig = &raw.BucketEncryptionGoogleManagedEncryptionEnforcementConfig{
-			RestrictionMode: string(e.GoogleManagedEncryptionEnforcementConfig.RestrictionMode),
+			RestrictionMode: string(gme.RestrictionMode),
 		}
 	}
-	if e.CustomerManagedEncryptionEnforcementConfig != nil {
+	if cme != nil {
+		update = true
 		ret.CustomerManagedEncryptionEnforcementConfig = &raw.BucketEncryptionCustomerManagedEncryptionEnforcementConfig{
-			RestrictionMode: string(e.CustomerManagedEncryptionEnforcementConfig.RestrictionMode),
+			RestrictionMode: string(cme.RestrictionMode),
 		}
 	}
-	if e.CustomerSuppliedEncryptionEnforcementConfig != nil {
+	if cse != nil {
+		update = true
 		ret.CustomerSuppliedEncryptionEnforcementConfig = &raw.BucketEncryptionCustomerSuppliedEncryptionEnforcementConfig{
-			RestrictionMode: string(e.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode),
+			RestrictionMode: string(cse.RestrictionMode),
 		}
+	}
+	if !update {
+		return nil
 	}
 	return ret
 }
 
-func (e *BucketEncryption) toProtoBucketEncryption() *storagepb.Bucket_Encryption {
-	if e == nil {
-		return nil
+func (b *BucketAttrs) toProtoBucketEncryption() *storagepb.Bucket_Encryption {
+	return toProtoEncryption(b.Encryption, b.GoogleManagedEncryptionEnforcementConfig, b.CustomerManagedEncryptionEnforcementConfig, b.CustomerSuppliedEncryptionEnforcementConfig)
+}
+
+func (b *BucketAttrsToUpdate) toProtoBucketEncryption() *storagepb.Bucket_Encryption {
+	return toProtoEncryption(b.Encryption, b.GoogleManagedEncryptionEnforcementConfig, b.CustomerManagedEncryptionEnforcementConfig, b.CustomerSuppliedEncryptionEnforcementConfig)
+}
+
+func toProtoEncryption(e *BucketEncryption, gme, cme, cse *EncryptionEnforcementConfig) *storagepb.Bucket_Encryption {
+	ret := &storagepb.Bucket_Encryption{}
+	if e != nil {
+		ret.DefaultKmsKey = e.DefaultKMSKeyName
 	}
-	ret := &storagepb.Bucket_Encryption{
-		DefaultKmsKey: e.DefaultKMSKeyName,
-	}
-	if e.GoogleManagedEncryptionEnforcementConfig != nil {
+	if gme != nil {
 		ret.GoogleManagedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_GoogleManagedEncryptionEnforcementConfig{
-			RestrictionMode: toProtoRestrictionMode(e.GoogleManagedEncryptionEnforcementConfig.RestrictionMode),
+			RestrictionMode: toProtoRestrictionMode(gme.RestrictionMode),
 		}
 	}
-	if e.CustomerManagedEncryptionEnforcementConfig != nil {
+	if cme != nil {
 		ret.CustomerManagedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_CustomerManagedEncryptionEnforcementConfig{
-			RestrictionMode: toProtoRestrictionMode(e.CustomerManagedEncryptionEnforcementConfig.RestrictionMode),
+			RestrictionMode: toProtoRestrictionMode(cme.RestrictionMode),
 		}
 	}
-	if e.CustomerSuppliedEncryptionEnforcementConfig != nil {
+	if cse != nil {
 		ret.CustomerSuppliedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_CustomerSuppliedEncryptionEnforcementConfig{
-			RestrictionMode: toProtoRestrictionMode(e.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode),
+			RestrictionMode: toProtoRestrictionMode(cse.RestrictionMode),
 		}
 	}
 	return ret
@@ -1931,52 +1966,84 @@ func toBucketEncryption(e *raw.BucketEncryption) *BucketEncryption {
 	if e == nil {
 		return nil
 	}
-	ret := &BucketEncryption{DefaultKMSKeyName: e.DefaultKmsKeyName}
-	if e.GoogleManagedEncryptionEnforcementConfig != nil {
-		ret.GoogleManagedEncryptionEnforcementConfig = &EncryptionEnforcementConfig{
-			RestrictionMode: RestrictionMode(e.GoogleManagedEncryptionEnforcementConfig.RestrictionMode),
-			EffectiveTime:   convertTime(e.GoogleManagedEncryptionEnforcementConfig.EffectiveTime),
-		}
+	return &BucketEncryption{DefaultKMSKeyName: e.DefaultKmsKeyName}
+}
+
+func toGoogleManagedEncryptionEnforcementConfig(e *raw.BucketEncryption) *EncryptionEnforcementConfig {
+	if e == nil || e.GoogleManagedEncryptionEnforcementConfig == nil {
+		return nil
 	}
-	if e.CustomerManagedEncryptionEnforcementConfig != nil {
-		ret.CustomerManagedEncryptionEnforcementConfig = &EncryptionEnforcementConfig{
-			RestrictionMode: RestrictionMode(e.CustomerManagedEncryptionEnforcementConfig.RestrictionMode),
-			EffectiveTime:   convertTime(e.CustomerManagedEncryptionEnforcementConfig.EffectiveTime),
-		}
+	return &EncryptionEnforcementConfig{
+		RestrictionMode: RestrictionMode(e.GoogleManagedEncryptionEnforcementConfig.RestrictionMode),
+		EffectiveTime:   convertTime(e.GoogleManagedEncryptionEnforcementConfig.EffectiveTime),
 	}
-	if e.CustomerSuppliedEncryptionEnforcementConfig != nil {
-		ret.CustomerSuppliedEncryptionEnforcementConfig = &EncryptionEnforcementConfig{
-			RestrictionMode: RestrictionMode(e.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode),
-			EffectiveTime:   convertTime(e.CustomerSuppliedEncryptionEnforcementConfig.EffectiveTime),
-		}
+}
+
+func toCustomerManagedEncryptionEnforcementConfig(e *raw.BucketEncryption) *EncryptionEnforcementConfig {
+	if e == nil || e.CustomerManagedEncryptionEnforcementConfig == nil {
+		return nil
 	}
-	return ret
+	return &EncryptionEnforcementConfig{
+		RestrictionMode: RestrictionMode(e.CustomerManagedEncryptionEnforcementConfig.RestrictionMode),
+		EffectiveTime:   convertTime(e.CustomerManagedEncryptionEnforcementConfig.EffectiveTime),
+	}
+}
+
+func toCustomerSuppliedEncryptionEnforcementConfig(e *raw.BucketEncryption) *EncryptionEnforcementConfig {
+	if e == nil || e.CustomerSuppliedEncryptionEnforcementConfig == nil {
+		return nil
+	}
+	return &EncryptionEnforcementConfig{
+		RestrictionMode: RestrictionMode(e.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode),
+		EffectiveTime:   convertTime(e.CustomerSuppliedEncryptionEnforcementConfig.EffectiveTime),
+	}
 }
 
 func toBucketEncryptionFromProto(e *storagepb.Bucket_Encryption) *BucketEncryption {
 	if e == nil {
 		return nil
 	}
-	ret := &BucketEncryption{DefaultKMSKeyName: e.GetDefaultKmsKey()}
-	if x := e.GetGoogleManagedEncryptionEnforcementConfig(); x != nil {
-		ret.GoogleManagedEncryptionEnforcementConfig = &EncryptionEnforcementConfig{
-			RestrictionMode: RestrictionMode(x.GetRestrictionMode()),
-			EffectiveTime:   x.GetEffectiveTime().AsTime(),
-		}
+	return &BucketEncryption{DefaultKMSKeyName: e.GetDefaultKmsKey()}
+}
+
+func toGoogleManagedEncryptionEnforcementConfigFromProto(e *storagepb.Bucket_Encryption) *EncryptionEnforcementConfig {
+	if e == nil {
+		return nil
 	}
-	if x := e.GetCustomerManagedEncryptionEnforcementConfig(); x != nil {
-		ret.CustomerManagedEncryptionEnforcementConfig = &EncryptionEnforcementConfig{
-			RestrictionMode: RestrictionMode(x.GetRestrictionMode()),
-			EffectiveTime:   x.GetEffectiveTime().AsTime(),
-		}
+	x := e.GetGoogleManagedEncryptionEnforcementConfig()
+	if x == nil {
+		return nil
 	}
-	if x := e.GetCustomerSuppliedEncryptionEnforcementConfig(); x != nil {
-		ret.CustomerSuppliedEncryptionEnforcementConfig = &EncryptionEnforcementConfig{
-			RestrictionMode: RestrictionMode(x.GetRestrictionMode()),
-			EffectiveTime:   x.GetEffectiveTime().AsTime(),
-		}
+	return &EncryptionEnforcementConfig{
+		RestrictionMode: RestrictionMode(x.GetRestrictionMode()),
+		EffectiveTime:   x.GetEffectiveTime().AsTime(),
 	}
-	return ret
+}
+func toCustomerManagedEncryptionEnforcementConfigFromProto(e *storagepb.Bucket_Encryption) *EncryptionEnforcementConfig {
+	if e == nil {
+		return nil
+	}
+	x := e.GetCustomerManagedEncryptionEnforcementConfig()
+	if x == nil {
+		return nil
+	}
+	return &EncryptionEnforcementConfig{
+		RestrictionMode: RestrictionMode(x.GetRestrictionMode()),
+		EffectiveTime:   x.GetEffectiveTime().AsTime(),
+	}
+}
+func toCustomerSuppliedEncryptionEnforcementConfigFromProto(e *storagepb.Bucket_Encryption) *EncryptionEnforcementConfig {
+	if e == nil {
+		return nil
+	}
+	x := e.GetCustomerSuppliedEncryptionEnforcementConfig()
+	if x == nil {
+		return nil
+	}
+	return &EncryptionEnforcementConfig{
+		RestrictionMode: RestrictionMode(x.GetRestrictionMode()),
+		EffectiveTime:   x.GetEffectiveTime().AsTime(),
+	}
 }
 
 func (b *BucketLogging) toRawBucketLogging() *raw.BucketLogging {

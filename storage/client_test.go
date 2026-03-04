@@ -199,19 +199,6 @@ func TestUpdateBucketEmulated(t *testing.T) {
 		if diff := cmp.Diff(got.StorageClass, want.StorageClass); diff != "" {
 			t.Errorf("StorageClass: got(-),want(+):\n%s", diff)
 		}
-		ua = &BucketAttrsToUpdate{
-			Encryption: &BucketEncryption{DeleteDefaultKMSKeyName: true},
-		}
-		want = &BucketAttrs{
-			Encryption: &BucketEncryption{},
-		}
-		got, err = client.UpdateBucket(ctx, bucket, ua, &BucketConditions{MetagenerationMatch: 2})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if diff := cmp.Diff(got.Encryption, want.Encryption); diff != "" {
-			t.Errorf("Encryption (after delete): got(-),want(+):\n%s", diff)
-		}
 	})
 }
 
