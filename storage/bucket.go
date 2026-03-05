@@ -468,17 +468,17 @@ type BucketAttrs struct {
 	Encryption *BucketEncryption
 
 	// GoogleManagedEncryptionEnforcementConfig specifies the enforcement config
-	// for Google Managed Encryption. Pass "NotRestricted" in Restriction mode
+	// for Google Managed Encryption. Pass RestrictionModeNotRestricted in Restriction mode
 	// to unset the configuration.
 	GoogleManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 
 	// CustomerManagedEncryptionEnforcementConfig specifies the enforcement config
-	// for Customer Managed Encryption. Pass "NotRestricted" in Restriction mode
+	// for Customer Managed Encryption. Pass RestrictionModeNotRestricted in Restriction mode
 	// to unset the configuration.
 	CustomerManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 
 	// CustomerSuppliedEncryptionEnforcementConfig specifies the enforcement config
-	// for Customer Supplied Encryption. Pass "NotRestricted" in Restriction mode
+	// for Customer Supplied Encryption. Pass RestrictionModeNotRestricted in Restriction mode
 	// to unset the configuration.
 	CustomerSuppliedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 
@@ -1179,7 +1179,7 @@ type EncryptionEnforcementConfig struct {
 }
 
 // RestrictionMode is the restriction mode for encryption.
-// It should be either "NotRestricted" or "FullyRestricted"
+// It should be either "NotRestricted" or "FullyRestricted".
 type RestrictionMode string
 
 // RestrictionMode constants.
@@ -1247,17 +1247,17 @@ type BucketAttrsToUpdate struct {
 	Encryption *BucketEncryption
 
 	// GoogleManagedEncryptionEnforcementConfig specifies the enforcement config
-	// for Google Managed Encryption. Pass "NotRestricted" in Restriction mode
+	// for Google Managed Encryption. Pass RestrictionModeNotRestricted in Restriction mode
 	// to unset the configuration.
 	GoogleManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 
 	// CustomerManagedEncryptionEnforcementConfig specifies the enforcement config
-	// for Customer Managed Encryption. Pass "NotRestricted" in Restriction mode
+	// for Customer Managed Encryption. Pass RestrictionModeNotRestricted in Restriction mode
 	// to unset the configuration.
 	CustomerManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 
 	// CustomerSuppliedEncryptionEnforcementConfig specifies the enforcement config
-	// for Customer Supplied Encryption. Pass "NotRestricted" in Restriction mode
+	// for Customer Supplied Encryption. Pass RestrictionModeNotRestricted in Restriction mode
 	// to unset the configuration.
 	CustomerSuppliedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 
@@ -1897,10 +1897,11 @@ func (b *BucketAttrsToUpdate) toRawBucketEncryption() *raw.BucketEncryption {
 }
 
 func toRawBucketEncryption(e *BucketEncryption, gme, cme, cse *EncryptionEnforcementConfig) *raw.BucketEncryption {
+	if e == nil && gme == nil && cme == nil && cse == nil {
+		return nil
+	}
 	ret := &raw.BucketEncryption{}
-	update := false
 	if e != nil {
-		update = true
 		if e.DefaultKMSKeyName != "" {
 			ret.DefaultKmsKeyName = e.DefaultKMSKeyName
 		} else {
@@ -1908,25 +1909,19 @@ func toRawBucketEncryption(e *BucketEncryption, gme, cme, cse *EncryptionEnforce
 		}
 	}
 	if gme != nil {
-		update = true
 		ret.GoogleManagedEncryptionEnforcementConfig = &raw.BucketEncryptionGoogleManagedEncryptionEnforcementConfig{
 			RestrictionMode: string(gme.RestrictionMode),
 		}
 	}
 	if cme != nil {
-		update = true
 		ret.CustomerManagedEncryptionEnforcementConfig = &raw.BucketEncryptionCustomerManagedEncryptionEnforcementConfig{
 			RestrictionMode: string(cme.RestrictionMode),
 		}
 	}
 	if cse != nil {
-		update = true
 		ret.CustomerSuppliedEncryptionEnforcementConfig = &raw.BucketEncryptionCustomerSuppliedEncryptionEnforcementConfig{
 			RestrictionMode: string(cse.RestrictionMode),
 		}
-	}
-	if !update {
-		return nil
 	}
 	return ret
 }
@@ -1940,32 +1935,27 @@ func (b *BucketAttrsToUpdate) toProtoBucketEncryption() *storagepb.Bucket_Encryp
 }
 
 func toProtoEncryption(e *BucketEncryption, gme, cme, cse *EncryptionEnforcementConfig) *storagepb.Bucket_Encryption {
+	if e == nil && gme == nil && cme == nil && cse == nil {
+		return nil
+	}
 	ret := &storagepb.Bucket_Encryption{}
-	update := false
 	if e != nil {
-		update = true
 		ret.DefaultKmsKey = e.DefaultKMSKeyName
 	}
 	if gme != nil {
-		update = true
 		ret.GoogleManagedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_GoogleManagedEncryptionEnforcementConfig{
 			RestrictionMode: toProtoRestrictionMode(gme.RestrictionMode),
 		}
 	}
 	if cme != nil {
-		update = true
 		ret.CustomerManagedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_CustomerManagedEncryptionEnforcementConfig{
 			RestrictionMode: toProtoRestrictionMode(cme.RestrictionMode),
 		}
 	}
 	if cse != nil {
-		update = true
 		ret.CustomerSuppliedEncryptionEnforcementConfig = &storagepb.Bucket_Encryption_CustomerSuppliedEncryptionEnforcementConfig{
 			RestrictionMode: toProtoRestrictionMode(cse.RestrictionMode),
 		}
-	}
-	if !update {
-		return nil
 	}
 	return ret
 }

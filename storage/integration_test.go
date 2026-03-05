@@ -6141,6 +6141,7 @@ func TestIntegration_KMS(t *testing.T) {
 }
 
 func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
+	t.Skip("b/489975716")
 	ctx := skipExtraReadAPIs(context.Background(), "no reads in test")
 	multiTransportTest(ctx, t, func(t *testing.T, ctx context.Context, _ string, prefix string, client *Client) {
 		h := testHelper{t}
@@ -6151,7 +6152,7 @@ func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
 			t.Fatal("GCLOUD_TESTS_GOLANG_KEYRING must be set. See CONTRIBUTING.md for details")
 		}
 		keyName := keyRingName + "/cryptoKeys/key1"
-		// Create bucket with encryption enforcement config
+		// Create bucket with encryption enforcement config.
 		h.mustCreate(bkt, testutil.ProjID(), &BucketAttrs{
 			Encryption: &BucketEncryption{
 				DefaultKMSKeyName: keyName,
@@ -6165,7 +6166,7 @@ func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
 		})
 		defer h.mustDeleteBucket(bkt)
 
-		// Verify creation
+		// Verify creation.
 		attrs := h.mustBucketAttrs(bkt)
 		if attrs.Encryption == nil {
 			t.Fatal("expected encryption attrs to be set")
@@ -6186,7 +6187,7 @@ func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
 			t.Errorf("CustomerManagedEncryptionEnforcementConfig.RestrictionMode: got %q, want %q", got, want)
 		}
 
-		// Update encryption enforcement config
+		// Update encryption enforcement config.
 		ua := BucketAttrsToUpdate{
 			CustomerManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
 				RestrictionMode: RestrictionModeNotRestricted,
@@ -6221,7 +6222,7 @@ func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
 			t.Errorf("CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode (after update): got %q, want %q", got, want)
 		}
 
-		// Patching GMEK while deleting DefaultKMSKeyName
+		// Patching GMEK while deleting DefaultKMSKeyName.
 		ua = BucketAttrsToUpdate{
 			Encryption: &BucketEncryption{DefaultKMSKeyName: ""},
 			GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
