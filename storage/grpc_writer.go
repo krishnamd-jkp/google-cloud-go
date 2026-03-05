@@ -858,6 +858,9 @@ func getObjectChecksums(params *getObjectChecksumsParams) *storagepb.ObjectCheck
 	if params.disableAutoChecksum || params.takeoverWriter {
 		return nil
 	}
+	if params.fullObjectChecksum == nil {
+		return nil
+	}
 	return &storagepb.ObjectChecksums{
 		Crc32C: proto.Uint32(params.fullObjectChecksum()),
 	}

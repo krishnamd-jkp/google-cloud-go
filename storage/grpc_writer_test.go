@@ -38,6 +38,11 @@ func TestGetObjectChecksums(t *testing.T) {
 			want:        nil,
 		},
 		{
+			name:        "objectAttrs is nil",
+			finishWrite: true,
+			want:        nil,
+		},
+		{
 			name:        "sendCRC32C is true, attrs have CRC32C",
 			finishWrite: true,
 			sendCRC32C:  true,
