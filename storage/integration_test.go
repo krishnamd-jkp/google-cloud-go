@@ -6158,10 +6158,10 @@ func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
 				DefaultKMSKeyName: keyName,
 			},
 			GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-				RestrictionMode: RestrictionModeFullyRestricted,
+				RestrictionMode: FullyRestricted,
 			},
 			CustomerManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-				RestrictionMode: RestrictionModeFullyRestricted,
+				RestrictionMode: FullyRestricted,
 			},
 		})
 		defer h.mustDeleteBucket(bkt)
@@ -6177,23 +6177,23 @@ func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
 		if attrs.GoogleManagedEncryptionEnforcementConfig == nil {
 			t.Fatal("expected GoogleManagedEncryptionEnforcementConfig to be set")
 		}
-		if got, want := attrs.GoogleManagedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeFullyRestricted; got != want {
+		if got, want := attrs.GoogleManagedEncryptionEnforcementConfig.RestrictionMode, FullyRestricted; got != want {
 			t.Errorf("GoogleManagedEncryptionEnforcementConfig.RestrictionMode: got %q, want %q", got, want)
 		}
 		if attrs.CustomerManagedEncryptionEnforcementConfig == nil {
 			t.Fatal("expected CustomerManagedEncryptionEnforcementConfig to be set")
 		}
-		if got, want := attrs.CustomerManagedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeFullyRestricted; got != want {
+		if got, want := attrs.CustomerManagedEncryptionEnforcementConfig.RestrictionMode, FullyRestricted; got != want {
 			t.Errorf("CustomerManagedEncryptionEnforcementConfig.RestrictionMode: got %q, want %q", got, want)
 		}
 
 		// Update encryption enforcement config.
 		ua := BucketAttrsToUpdate{
 			CustomerManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-				RestrictionMode: RestrictionModeNotRestricted,
+				RestrictionMode: NotRestricted,
 			},
 			CustomerSuppliedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-				RestrictionMode: RestrictionModeFullyRestricted,
+				RestrictionMode: FullyRestricted,
 			},
 		}
 
@@ -6206,19 +6206,19 @@ func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
 		if attrs.GoogleManagedEncryptionEnforcementConfig == nil {
 			t.Fatal("expected GoogleManagedEncryptionEnforcementConfig to be set after update")
 		}
-		if got, want := attrs.GoogleManagedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeFullyRestricted; got != want {
+		if got, want := attrs.GoogleManagedEncryptionEnforcementConfig.RestrictionMode, FullyRestricted; got != want {
 			t.Errorf("GoogleManagedEncryptionEnforcementConfig.RestrictionMode (after update): got %q, want %q", got, want)
 		}
 		if attrs.CustomerManagedEncryptionEnforcementConfig == nil {
 			t.Fatal("expected CustomerManagedEncryptionEnforcementConfig to be set after update")
 		}
-		if got, want := attrs.CustomerManagedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeNotRestricted; got != want {
+		if got, want := attrs.CustomerManagedEncryptionEnforcementConfig.RestrictionMode, NotRestricted; got != want {
 			t.Errorf("CustomerManagedEncryptionEnforcementConfig.RestrictionMode (after update): got %q, want %q", got, want)
 		}
 		if attrs.CustomerSuppliedEncryptionEnforcementConfig == nil {
 			t.Fatal("expected CustomerSuppliedEncryptionEnforcementConfig to be set after update")
 		}
-		if got, want := attrs.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeFullyRestricted; got != want {
+		if got, want := attrs.CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode, FullyRestricted; got != want {
 			t.Errorf("CustomerSuppliedEncryptionEnforcementConfig.RestrictionMode (after update): got %q, want %q", got, want)
 		}
 
@@ -6226,7 +6226,7 @@ func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
 		ua = BucketAttrsToUpdate{
 			Encryption: &BucketEncryption{DefaultKMSKeyName: ""},
 			GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-				RestrictionMode: RestrictionModeNotRestricted,
+				RestrictionMode: NotRestricted,
 			},
 		}
 		attrs = h.mustUpdateBucket(bkt, ua, attrs.MetaGeneration)
@@ -6237,7 +6237,7 @@ func TestIntegration_BucketEncryptionEnforcement(t *testing.T) {
 		if attrs.GoogleManagedEncryptionEnforcementConfig == nil {
 			t.Fatal("expected GoogleManagedEncryptionEnforcementConfig to be set after patch")
 		}
-		if got, want := attrs.GoogleManagedEncryptionEnforcementConfig.RestrictionMode, RestrictionModeNotRestricted; got != want {
+		if got, want := attrs.GoogleManagedEncryptionEnforcementConfig.RestrictionMode, NotRestricted; got != want {
 			t.Errorf("GoogleManagedEncryptionEnforcementConfig.RestrictionMode (after patch): got %q, want %q", got, want)
 		}
 	})

@@ -1802,13 +1802,13 @@ func TestBucketEncryption_ToRaw(t *testing.T) {
 	bAttrs := &BucketAttrs{
 		Encryption: e,
 		GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-			RestrictionMode: RestrictionModeFullyRestricted,
+			RestrictionMode: FullyRestricted,
 		},
 		CustomerManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-			RestrictionMode: RestrictionModeNotRestricted,
+			RestrictionMode: NotRestricted,
 		},
 		CustomerSuppliedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-			RestrictionMode: RestrictionModeFullyRestricted,
+			RestrictionMode: FullyRestricted,
 		},
 	}
 
@@ -1850,7 +1850,7 @@ func TestBucketEncryption_FromRaw(t *testing.T) {
 
 	gotGMEK := toGoogleManagedEncryptionEnforcementConfig(rawE)
 	wantGMEK := &EncryptionEnforcementConfig{
-		RestrictionMode: RestrictionModeFullyRestricted,
+		RestrictionMode: FullyRestricted,
 		EffectiveTime:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
 	if diff := cmp.Diff(gotGMEK, wantGMEK); diff != "" {
@@ -1865,13 +1865,13 @@ func TestBucketEncryption_ToProto(t *testing.T) {
 	bAttrs := &BucketAttrs{
 		Encryption: e,
 		GoogleManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-			RestrictionMode: RestrictionModeFullyRestricted,
+			RestrictionMode: FullyRestricted,
 		},
 		CustomerManagedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-			RestrictionMode: RestrictionModeNotRestricted,
+			RestrictionMode: NotRestricted,
 		},
 		CustomerSuppliedEncryptionEnforcementConfig: &EncryptionEnforcementConfig{
-			RestrictionMode: RestrictionModeFullyRestricted,
+			RestrictionMode: FullyRestricted,
 		},
 	}
 
@@ -1916,7 +1916,7 @@ func TestBucketEncryption_FromProto(t *testing.T) {
 
 	gotGMEK := toGoogleManagedEncryptionEnforcementConfigFromProto(protoE)
 	wantGMEK := &EncryptionEnforcementConfig{
-		RestrictionMode: RestrictionModeFullyRestricted,
+		RestrictionMode: FullyRestricted,
 		EffectiveTime:   time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
 	if diff := cmp.Diff(gotGMEK, wantGMEK); diff != "" {

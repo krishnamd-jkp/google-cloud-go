@@ -468,17 +468,17 @@ type BucketAttrs struct {
 	Encryption *BucketEncryption
 
 	// GoogleManagedEncryptionEnforcementConfig specifies the enforcement config
-	// for Google Managed Encryption. Pass RestrictionModeNotRestricted in Restriction mode
+	// for Google Managed Encryption. Pass NotRestricted in Restriction mode
 	// to unset the configuration.
 	GoogleManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 
 	// CustomerManagedEncryptionEnforcementConfig specifies the enforcement config
-	// for Customer Managed Encryption. Pass RestrictionModeNotRestricted in Restriction mode
+	// for Customer Managed Encryption. Pass NotRestricted in Restriction mode
 	// to unset the configuration.
 	CustomerManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 
 	// CustomerSuppliedEncryptionEnforcementConfig specifies the enforcement config
-	// for Customer Supplied Encryption. Pass RestrictionModeNotRestricted in Restriction mode
+	// for Customer Supplied Encryption. Pass NotRestricted in Restriction mode
 	// to unset the configuration.
 	CustomerSuppliedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 
@@ -1184,8 +1184,8 @@ type RestrictionMode string
 
 // RestrictionMode constants.
 const (
-	RestrictionModeNotRestricted   RestrictionMode = "NotRestricted"
-	RestrictionModeFullyRestricted RestrictionMode = "FullyRestricted"
+	NotRestricted   RestrictionMode = "NotRestricted"
+	FullyRestricted RestrictionMode = "FullyRestricted"
 )
 
 // BucketAttrsToUpdate define the attributes to update during an Update call.
@@ -1247,17 +1247,17 @@ type BucketAttrsToUpdate struct {
 	Encryption *BucketEncryption
 
 	// GoogleManagedEncryptionEnforcementConfig specifies the enforcement config
-	// for Google Managed Encryption. Pass RestrictionModeNotRestricted in Restriction mode
+	// for Google Managed Encryption. Pass NotRestricted in Restriction mode
 	// to unset the configuration.
 	GoogleManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 
 	// CustomerManagedEncryptionEnforcementConfig specifies the enforcement config
-	// for Customer Managed Encryption. Pass RestrictionModeNotRestricted in Restriction mode
+	// for Customer Managed Encryption. Pass NotRestricted in Restriction mode
 	// to unset the configuration.
 	CustomerManagedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 
 	// CustomerSuppliedEncryptionEnforcementConfig specifies the enforcement config
-	// for Customer Supplied Encryption. Pass RestrictionModeNotRestricted in Restriction mode
+	// for Customer Supplied Encryption. Pass NotRestricted in Restriction mode
 	// to unset the configuration.
 	CustomerSuppliedEncryptionEnforcementConfig *EncryptionEnforcementConfig
 
