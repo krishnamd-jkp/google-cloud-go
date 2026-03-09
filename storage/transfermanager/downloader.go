@@ -994,9 +994,10 @@ func isSubPath(localDirectory, filePath string) (bool, error) {
 		return false, fmt.Errorf("cannot convert file path to absolute path: %w", err)
 	}
 
+	absFilePathFolder := filepath.Dir(absFilePath)
 	// The relative path from the local directory to the file path.
 	// ex: if localDirectory is /tmp/foo and filePath is /tmp/foo/bar, rel will be "bar".
-	rel, err := filepath.Rel(absLocalDirectory, absFilePath)
+	rel, err := filepath.Rel(absLocalDirectory, absFilePathFolder)
 	if err != nil {
 		return false, err
 	}
