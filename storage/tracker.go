@@ -41,11 +41,16 @@ func addFeatureAttributes(ctx context.Context, features ...featureCode) context.
 	}
 
 	current := getFeatureAttributes(ctx)
+	updated := current
 	for _, f := range features {
-		current |= uint8(f)
+		updated |= uint8(f)
 	}
 
-	return callctx.SetHeaders(ctx, featureTrackerHeaderName, encodeUint8(current))
+	if updated == current {
+		return ctx
+	}
+
+	return callctx.SetHeaders(ctx, featureTrackerHeaderName, encodeUint8(updated))
 }
 
 // getFeatureAttributes extracts and merges all feature attributes present in the context.
