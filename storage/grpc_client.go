@@ -124,6 +124,10 @@ type grpcStorageClient struct {
 	settings *settings
 	config   *storageConfig
 	dpDiag   string
+
+	// configFeatureAttributes tracks client-level features that are enabled for this
+	// client instance, represented as an 8-bit bitmask.
+	configFeatureAttributes uint8
 }
 
 func enableClientMetrics(ctx context.Context, s *settings, config storageConfig) (*metricsContext, error) {
@@ -172,6 +176,7 @@ func newGRPCStorageClient(ctx context.Context, opts ...storageOption) (*grpcStor
 		settings: s,
 		config:   &config,
 	}
+
 	// Add routing interceptors to inject headers.
 	ui, si := c.routingInterceptors()
 	s.clientOption = append(s.clientOption,
@@ -240,6 +245,21 @@ func (c *grpcStorageClient) prepareDirectPathMetadata(ctx context.Context, targe
 			md.Set(requestParamsHeaderKey, reason)
 		}
 	}
+
+	// Client level feature tracking.
+	features := getFeatureAttributes(ctx)
+	features |= c.configFeatureAttributes
+	// Merge all existing headers for this key from metadata.
+	for _, existing := range md[featureTrackerHeaderName] {
+		if decoded, err := decodeUint8(existing); err == nil {
+			features |= decoded
+		}
+	}
+
+	if features > 0 {
+		md.Set(featureTrackerHeaderName, encodeUint8(features))
+	}
+
 	return metadata.NewOutgoingContext(ctx, md), nil
 }
 
