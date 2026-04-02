@@ -1519,10 +1519,7 @@ func readerReopen(ctx context.Context, header http.Header, params *newRangeReade
 			//      https://cloud.google.com/storage/docs/transcoding#range,
 			// thus we have to manually move the body forward by seen bytes.
 			if decompressiveTranscoding(res) && seen > 0 {
-				if _, err := io.CopyN(io.Discard, res.Body, seen); err != nil {
-					res.Body.Close()
-					return err
-				}
+				_, _ = io.CopyN(io.Discard, res.Body, seen)
 			}
 
 			// If a generation hasn't been specified, and this is the first response we get, let's record the
