@@ -1563,7 +1563,7 @@ func parseReadResponse(res *http.Response, params *newRangeReaderParams, reopen 
 		// the total size.
 		size, err = strconv.ParseInt(cr[strings.LastIndex(cr, "/")+1:], 10, 64)
 		if err != nil {
-			err = fmt.Errorf("storage: invalid Content-Range %q", cr)
+			err = fmt.Errorf("storage: invalid Content-Range %q: %w", cr, err)
 			return nil, err
 		}
 
