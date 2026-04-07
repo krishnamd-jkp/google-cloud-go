@@ -23,26 +23,26 @@ func TestAddFeatureAttributes(t *testing.T) {
 	ctx := context.Background()
 
 	// Initial features should be 0.
-	if got := getFeatureAttributes(ctx); got != 0 {
+	if got := featureAttributes(ctx); got != 0 {
 		t.Errorf("getFeatureAttributes(empty) = %d; want 0", got)
 	}
 
 	// Add a single feature.
 	ctx = addFeatureAttributes(ctx, featureMultistreamInMRD)
-	if got := getFeatureAttributes(ctx); got != uint32(1<<featureMultistreamInMRD) {
+	if got := featureAttributes(ctx); got != uint32(1<<featureMultistreamInMRD) {
 		t.Errorf("getFeatureAttributes(MultiStream) = %d; want %d", got, featureMultistreamInMRD)
 	}
 
 	// Add another feature (merge).
 	ctx = addFeatureAttributes(ctx, featurePCU)
 	want := uint32(1<<featureMultistreamInMRD) | uint32(1<<featurePCU)
-	if got := getFeatureAttributes(ctx); got != want {
+	if got := featureAttributes(ctx); got != want {
 		t.Errorf("getFeatureAttributes(MultiStream | PCU) = %d; want %d", got, want)
 	}
 
 	// Adding same feature should be idempotent.
 	ctx = addFeatureAttributes(ctx, featurePCU)
-	if got := getFeatureAttributes(ctx); got != want {
+	if got := featureAttributes(ctx); got != want {
 		t.Errorf("getFeatureAttributes(MultiStream | PCU | PCU) = %d; want %d", got, want)
 	}
 }

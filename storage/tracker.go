@@ -30,7 +30,7 @@ func addFeatureAttributes(ctx context.Context, features ...trackedFeature) conte
 		return ctx
 	}
 
-	current := getFeatureAttributes(ctx)
+	current := featureAttributes(ctx)
 	updated := current
 	for _, f := range features {
 		updated |= (1 << f)
@@ -43,9 +43,9 @@ func addFeatureAttributes(ctx context.Context, features ...trackedFeature) conte
 	return callctx.SetHeaders(ctx, featureTrackerHeaderName, encodeUint32(uint32(updated)))
 }
 
-// getFeatureAttributes extracts and merges all feature attributes present in the context.
+// featureAttributes extracts and merges all feature attributes present in the context.
 // It returns a bitmask represented as a uint8.
-func getFeatureAttributes(ctx context.Context) uint32 {
+func featureAttributes(ctx context.Context) uint32 {
 	ctxHeaders := callctx.HeadersFromContext(ctx)
 	if vals := ctxHeaders[featureTrackerHeaderName]; len(vals) > 0 {
 		// If multiple values are present in the context (e.g. from nested calls),
