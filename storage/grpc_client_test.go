@@ -500,9 +500,9 @@ func TestPrepareDirectPathMetadata(t *testing.T) {
 func TestPrepareDirectPathMetadata_FeatureTracking(t *testing.T) {
 	tests := []struct {
 		desc            string
-		configFeatures  uint8
-		contextFeatures []featureCode
-		wantFeatures    uint8
+		configFeatures  uint32
+		contextFeatures []trackedFeature
+		wantFeatures    uint32
 	}{
 		{
 			desc:         "no features",
@@ -510,14 +510,14 @@ func TestPrepareDirectPathMetadata_FeatureTracking(t *testing.T) {
 		},
 		{
 			desc:           "config features only",
-			configFeatures: uint8(featurePCU),
-			wantFeatures:   uint8(featurePCU),
+			configFeatures: uint32(1 << featurePCU),
+			wantFeatures:   uint32(1 << featurePCU),
 		},
 		{
 			desc:            "merged features",
-			configFeatures:  uint8(featurePCU),
-			contextFeatures: []featureCode{featureMultiStream},
-			wantFeatures:    uint8(featurePCU) | uint8(featureMultiStream),
+			configFeatures:  uint32(1 << featurePCU),
+			contextFeatures: []trackedFeature{featureMultistreamInMRD},
+			wantFeatures:    uint32(1<<featurePCU) | uint32(1<<featureMultistreamInMRD),
 		},
 	}
 
@@ -555,7 +555,7 @@ func TestPrepareDirectPathMetadata_FeatureTracking(t *testing.T) {
 				t.Fatalf("features header missing, want %d", tc.wantFeatures)
 			}
 
-			decoded, err := decodeUint8(got[0])
+			decoded, err := decodeUint32(got[0])
 			if err != nil {
 				t.Fatalf("failed to decode features: %v", err)
 			}

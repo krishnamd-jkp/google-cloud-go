@@ -28,14 +28,14 @@ func TestAddFeatureAttributes(t *testing.T) {
 	}
 
 	// Add a single feature.
-	ctx = addFeatureAttributes(ctx, featureMultiStream)
-	if got := getFeatureAttributes(ctx); got != uint8(featureMultiStream) {
-		t.Errorf("getFeatureAttributes(MultiStream) = %d; want %d", got, featureMultiStream)
+	ctx = addFeatureAttributes(ctx, featureMultistreamInMRD)
+	if got := getFeatureAttributes(ctx); got != uint32(1<<featureMultistreamInMRD) {
+		t.Errorf("getFeatureAttributes(MultiStream) = %d; want %d", got, featureMultistreamInMRD)
 	}
 
 	// Add another feature (merge).
 	ctx = addFeatureAttributes(ctx, featurePCU)
-	want := uint8(featureMultiStream) | uint8(featurePCU)
+	want := uint32(1<<featureMultistreamInMRD) | uint32(1<<featurePCU)
 	if got := getFeatureAttributes(ctx); got != want {
 		t.Errorf("getFeatureAttributes(MultiStream | PCU) = %d; want %d", got, want)
 	}
@@ -44,21 +44,5 @@ func TestAddFeatureAttributes(t *testing.T) {
 	ctx = addFeatureAttributes(ctx, featurePCU)
 	if got := getFeatureAttributes(ctx); got != want {
 		t.Errorf("getFeatureAttributes(MultiStream | PCU | PCU) = %d; want %d", got, want)
-	}
-}
-
-func TestEncodeDecodeUint8(t *testing.T) {
-	tests := []uint8{0, 1, 2, 127, 128, 255}
-
-	for _, want := range tests {
-		encoded := encodeUint8(want)
-		got, err := decodeUint8(encoded)
-		if err != nil {
-			t.Errorf("decodeUint8(%q) error: %v", encoded, err)
-			continue
-		}
-		if got != want {
-			t.Errorf("decodeUint8(encodeUint8(%d)) = %d; want %d", want, got, want)
-		}
 	}
 }

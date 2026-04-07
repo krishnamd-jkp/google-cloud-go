@@ -16,26 +16,16 @@ package storage
 
 import (
 	"context"
-	"encoding/base64"
 
 	"github.com/googleapis/gax-go/v2/callctx"
 )
 
 const featureTrackerHeaderName = "x-goog-storage-go-features"
 
-// featureCode represents a specific client feature being tracked, represented
-// as a bit in a bitmask.
-type featureCode uint8
-
-const (
-	featureMultiStream featureCode = 1
-	featurePCU         featureCode = 2
-)
-
 // addFeatureAttributes adds the specified feature codes to the context.
 // Features are stored as a bitmask in the callctx headers and will be
 // injected into the outgoing request headers by the transport.
-func addFeatureAttributes(ctx context.Context, features ...featureCode) context.Context {
+func addFeatureAttributes(ctx context.Context, features ...trackedFeature) context.Context {
 	if len(features) == 0 {
 		return ctx
 	}
@@ -43,44 +33,30 @@ func addFeatureAttributes(ctx context.Context, features ...featureCode) context.
 	current := getFeatureAttributes(ctx)
 	updated := current
 	for _, f := range features {
-		updated |= uint8(f)
+		updated |= (1 << f)
 	}
 
 	if updated == current {
 		return ctx
 	}
 
-	return callctx.SetHeaders(ctx, featureTrackerHeaderName, encodeUint8(updated))
+	return callctx.SetHeaders(ctx, featureTrackerHeaderName, encodeUint32(uint32(updated)))
 }
 
 // getFeatureAttributes extracts and merges all feature attributes present in the context.
 // It returns a bitmask represented as a uint8.
-func getFeatureAttributes(ctx context.Context) uint8 {
+func getFeatureAttributes(ctx context.Context) uint32 {
 	ctxHeaders := callctx.HeadersFromContext(ctx)
 	if vals := ctxHeaders[featureTrackerHeaderName]; len(vals) > 0 {
 		// If multiple values are present in the context (e.g. from nested calls),
 		// merge them into a single bitmask.
-		var merged uint8
+		var merged uint32
 		for _, v := range vals {
-			if decoded, err := decodeUint8(v); err == nil {
+			if decoded, err := decodeUint32(v); err == nil {
 				merged |= decoded
 			}
 		}
 		return merged
 	}
 	return 0
-}
-
-// encodeUint8 encodes a uint8 bitmask into a base64 string for header injection.
-func encodeUint8(u uint8) string {
-	return base64.StdEncoding.EncodeToString([]byte{u})
-}
-
-// decodeUint8 decodes a base64 string back into a uint8 bitmask.
-func decodeUint8(s string) (uint8, error) {
-	b, err := base64.StdEncoding.DecodeString(s)
-	if err != nil || len(b) < 1 {
-		return 0, err
-	}
-	return b[0], nil
 }
