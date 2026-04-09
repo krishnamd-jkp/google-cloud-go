@@ -46,3 +46,46 @@ func TestAddFeatureAttributes(t *testing.T) {
 		t.Errorf("getFeatureAttributes(MultiStream | PCU | PCU) = %d; want %d", got, want)
 	}
 }
+
+func TestMergeFeatureAttributes(t *testing.T) {
+	tests := []struct {
+		name string
+		vals []string
+		want uint32
+	}{
+		{
+			name: "empty",
+			vals: []string{},
+			want: 0,
+		},
+		{
+			name: "single value",
+			vals: []string{encodeUint32(1)},
+			want: 1,
+		},
+		{
+			name: "multiple values",
+			vals: []string{encodeUint32(1), encodeUint32(2), encodeUint32(4)},
+			want: 7,
+		},
+		{
+			name: "overlapping values",
+			vals: []string{encodeUint32(3), encodeUint32(6)},
+			want: 7, // 011 | 110 = 111 (7)
+		},
+		{
+			name: "invalid values ignored",
+			vals: []string{encodeUint32(1), "invalid", encodeUint32(8)},
+			want: 9,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mergeFeatureAttributes(tc.vals)
+			if got != tc.want {
+				t.Errorf("mergeFeatureAttributes(%v) = %d; want %d", tc.vals, got, tc.want)
+			}
+		})
+	}
+}

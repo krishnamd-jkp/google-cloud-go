@@ -249,11 +249,7 @@ func (c *grpcStorageClient) prepareDirectPathMetadata(ctx context.Context, targe
 	features := featureAttributes(ctx)
 	features |= c.configFeatureAttributes
 	// Merge all existing headers for this key from metadata.
-	for _, existing := range md[featureTrackerHeaderName] {
-		if decoded, err := decodeUint32(existing); err == nil {
-			features |= decoded
-		}
-	}
+	features |= mergeFeatureAttributes(md[featureTrackerHeaderName])
 
 	if features > 0 {
 		md.Set(featureTrackerHeaderName, encodeUint32(features))

@@ -47,16 +47,17 @@ func addFeatureAttributes(ctx context.Context, features ...trackedFeature) conte
 // It returns a bitmask represented as a uint8.
 func featureAttributes(ctx context.Context) uint32 {
 	ctxHeaders := callctx.HeadersFromContext(ctx)
-	if vals := ctxHeaders[featureTrackerHeaderName]; len(vals) > 0 {
-		// If multiple values are present in the context (e.g. from nested calls),
-		// merge them into a single bitmask.
-		var merged uint32
-		for _, v := range vals {
-			if decoded, err := decodeUint32(v); err == nil {
-				merged |= decoded
-			}
+	// If multiple values are present in the context (e.g. from nested calls),
+	// merge them into a single bitmask.
+	return mergeFeatureAttributes(ctxHeaders[featureTrackerHeaderName])
+}
+
+func mergeFeatureAttributes(vals []string) uint32 {
+	features := uint32(0)
+	for _, val := range vals {
+		if decoded, err := decodeUint32(val); err == nil {
+			features |= decoded
 		}
-		return merged
 	}
-	return 0
+	return features
 }
