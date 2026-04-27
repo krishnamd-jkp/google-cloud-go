@@ -656,7 +656,7 @@ func TestIntegration_MRDScaleUpConnections(t *testing.T) {
 				log.Printf("failed to delete test object: %v", err)
 			}
 		})
-		maxConnections := 3
+		maxConnections := 2
 		// Initializing targetPendingBytes to 1 to make sure manager
 		// definitely scales up with any load.
 		reader, err := obj.NewMultiRangeDownloader(ctx, WithMaxConnections(maxConnections), WithTargetPendingBytes(1))
