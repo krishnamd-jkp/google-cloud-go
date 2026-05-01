@@ -28,7 +28,6 @@ tools:
       version: v1.3.0
     - name: google.golang.org/protobuf/cmd/protoc-gen-go
       version: v1.36.11
-release: {}
 default:
   tag_format: '{name}/v{version}'
 libraries:
