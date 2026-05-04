@@ -335,8 +335,7 @@ func (c *mrdAddStreamErrorCmd) apply(ctx context.Context, m *multiRangeDownloade
 		} else {
 			err = errors.New("no streams available")
 		}
-		m.setPermanentError(err)
-		m.failAllPending(m.getPermanentError())
+		m.failManager(err)
 	}
 }
 
@@ -536,6 +535,9 @@ func (m *multiRangeDownloaderManager) eventLoop() {
 	defer m.cleanup()
 
 	for {
+		if m.ctx.Err() != nil {
+			return
+		}
 		var nextReq *storagepb.BidiReadObjectRequest
 		var nextRangeReq *rangeRequest
 		var targetStream *mrdStream
@@ -784,7 +786,9 @@ func (m *multiRangeDownloaderManager) handleAddCmd(ctx context.Context, cmd *mrd
 }
 
 func (m *multiRangeDownloaderManager) shouldAddStream() bool {
-	if m.streamCreating || len(m.streams) >= m.params.maxConnections {
+	if m.ctx.Err() != nil ||
+		m.streamCreating ||
+		len(m.streams) >= m.params.maxConnections {
 		return false
 	}
 	if len(m.streams) < m.params.minConnections {
@@ -843,6 +847,23 @@ func (m *multiRangeDownloaderManager) handleWaitCmd(ctx context.Context, cmd *mr
 }
 
 func (m *multiRangeDownloaderManager) handleAddStreamCmd(ctx context.Context, cmd *addStreamCmd) {
+	// Check for any error in stream before adding this stream.
+	if cmd.stream == nil ||
+		cmd.stream.session == nil ||
+		cmd.stream.session.streamErr != nil {
+		m.streamCreating = false
+		if len(m.streams) == 0 {
+			var err error
+			if cmd.stream != nil && cmd.stream.session != nil {
+				err = cmd.stream.session.streamErr
+			}
+			if err == nil {
+				err = errors.New("no streams available: stream creation failed or has error")
+			}
+			m.failManager(err)
+		}
+		return
+	}
 	m.streams[cmd.id] = cmd.stream
 	if cmd.spec != nil {
 		m.readSpec = cmd.spec
@@ -861,12 +882,22 @@ func (m *multiRangeDownloaderManager) handleReconnectStreamCmd(ctx context.Conte
 	}
 	stream.reconnecting = false
 
-	if cmd.err != nil {
-		m.failStream(stream, cmd.err)
+	if cmd.err != nil ||
+		cmd.session == nil ||
+		cmd.session.streamErr != nil {
+		streamErr := cmd.err
+		if streamErr == nil && cmd.session == nil {
+			streamErr = errors.New("session nil for reconnected stream")
+		} else if streamErr == nil {
+			streamErr = cmd.session.streamErr
+		}
+		if cmd.session != nil {
+			cmd.session.Shutdown()
+		}
+		m.failStream(stream, streamErr)
 		if len(m.streams) == 0 && !m.streamCreating {
-			err := fmt.Errorf("no streams available. Last observed error: %w", cmd.err)
-			m.setPermanentError(err)
-			m.failAllPending(m.getPermanentError())
+			err := fmt.Errorf("no streams available. Last observed error: %w", streamErr)
+			m.failManager(err)
 		}
 		return
 	}
@@ -1101,6 +1132,12 @@ func (m *multiRangeDownloaderManager) setPermanentError(err error) {
 	}
 }
 
+func (m *multiRangeDownloaderManager) failManager(err error) {
+	m.setPermanentError(err)
+	m.failAllPending(m.getPermanentError())
+	m.cancel()
+}
+
 // --- bidiReadStreamSession ---
 // Controls lifespan of an individual bi-directional gRPC stream to the
 // object in GCS. Spins up goroutines for the read and write sides of the
@@ -1179,6 +1216,7 @@ func (s *bidiReadStreamSession) SendRequest(req *storagepb.BidiReadObjectRequest
 func (s *bidiReadStreamSession) Shutdown() {
 	s.cancel()
 	s.wg.Wait()
+	s.setError(s.ctx.Err())
 }
 func (s *bidiReadStreamSession) setError(err error) {
 	s.errOnce.Do(func() {
