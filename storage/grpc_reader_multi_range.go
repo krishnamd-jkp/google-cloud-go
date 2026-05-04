@@ -852,6 +852,9 @@ func (m *multiRangeDownloaderManager) handleAddStreamCmd(ctx context.Context, cm
 		cmd.stream.session == nil ||
 		cmd.stream.session.streamErr != nil {
 		m.streamCreating = false
+		if cmd.stream.session != nil {
+			cmd.stream.session.Shutdown()
+		}
 		if len(m.streams) == 0 {
 			var err error
 			if cmd.stream != nil && cmd.stream.session != nil {
