@@ -1,0 +1,3 @@
+# Build outputs of the Rust engine: never commit binaries.
+/lib/
+/gcs_core/target/

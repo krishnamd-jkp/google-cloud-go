@@ -1118,10 +1118,13 @@ func TestRetryConformance(t *testing.T) {
 					}
 					for i, fn := range methods[methodName] {
 						transports := []string{"http", "grpc"}
+						if rustDataPathCompiled {
+							transports = append(transports, "rust")
+						}
 						for _, transport := range transports {
 							testName := fmt.Sprintf("%v-%v-%v-%v-%v", transport, retryTest.Id, instructions.Instructions, methodName, i)
 							t.Run(testName, func(t *testing.T) {
-								if transport == "http" && slices.Contains(skippedHTTPMethods, methodName) {
+								if (transport == "http" || transport == "rust") && slices.Contains(skippedHTTPMethods, methodName) {
 									t.Skip("not supported")
 								}
 								if transport == "grpc" && slices.Contains(skippedGRPCMethods, methodName) {
@@ -1254,12 +1257,17 @@ func uploadTestObject(bucketName, objName string, n []byte) error {
 // Creates a retry test resource in the emulator
 func (et *emulatorTest) create(instructions map[string][]string, transport string) {
 	c := http.DefaultClient
+	// The Rust data path speaks the JSON API, so the testbench treats it as "http".
+	tbTransport := transport
+	if transport == "rust" {
+		tbTransport = "http"
+	}
 	data := struct {
 		Instructions map[string][]string `json:"instructions"`
 		Transport    string              `json:"transport"`
 	}{
 		Instructions: instructions,
-		Transport:    transport,
+		Transport:    tbTransport,
 	}
 
 	buf := new(bytes.Buffer)
@@ -1305,6 +1313,12 @@ func (et *emulatorTest) create(instructions map[string][]string, transport strin
 		transportClient, err = NewGRPCClient(ctx, WithGRPCBidiReads())
 		if err != nil {
 			et.Fatalf("GRPC transportClient: %v", err)
+		}
+	}
+	if transport == "rust" {
+		transportClient, err = newRustRetryTestClient(ctx, et.id)
+		if err != nil {
+			et.Fatalf("Rust transportClient: %v", err)
 		}
 	}
 	// Reduce backoff to get faster test execution.

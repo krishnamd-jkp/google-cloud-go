@@ -2844,6 +2844,10 @@ func initEmulatorClients() func() error {
 		"http": httpClient,
 		"grpc": grpcClient,
 	}
+	// Adds a "rust" transport (Rust engine data path) when built with -tags gcsrust.
+	if err := addRustEmulatorClient(ctx, emulatorClients); err != nil {
+		log.Fatalf("Error setting up Rust data path client for emulator tests: %v", err)
+	}
 
 	veneerClient, err = NewClient(ctx)
 	if err != nil {

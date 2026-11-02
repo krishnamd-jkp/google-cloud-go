@@ -1,0 +1,41 @@
+[package]
+name = "gcs_core"
+version = "0.2.0"
+edition = "2024"
+description = "C ABI over the google-cloud-storage crate for the Go SDK's opt-in Rust data path (v2 of the POC)."
+license = "Apache-2.0"
+publish = false
+
+[lib]
+# Only the static library is shipped to Go (cgo links it into the user's binary).
+crate-type = ["staticlib"]
+
+[features]
+# Crypto provider for rustls. `ring` is the default because it needs no cmake/C toolchain and
+# avoids aws-lc's glibc>=2.38 symbol coupling (`__isoc23_*`), so one prebuilt archive links on
+# old distros. `aws-lc` is kept for teams that need its FIPS-validated variant.
+default = ["crypto-ring"]
+crypto-ring = ["dep:rustls", "rustls/ring"]
+crypto-aws-lc = ["google-cloud-storage/default-rustls-provider"]
+
+[dependencies]
+bytes = "1"
+futures = "0.3"
+# Pin the exact SDK version: the Go module must be version-locked to one Rust engine build.
+google-cloud-storage = { version = "=1.20.0", default-features = false }
+google-cloud-auth = { version = "1.17", default-features = false }
+google-cloud-gax = { version = "1.15", default-features = false }
+google-cloud-wkt = { version = "1.9", default-features = false }
+http = "1"
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "logging"], optional = true }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "debuginfo"
+# Keep unwinding so every FFI entry point can turn a panic into an error instead of aborting the
+# Go process. (panic = "abort" would shrink the binary but makes any panic fatal to the host.)
+panic = "unwind"

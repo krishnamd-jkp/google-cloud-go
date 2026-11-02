@@ -190,3 +190,22 @@ type GRPCKeepaliveConfig struct {
 	// failing in-flight RPCs. If 0, gRPC's default of 20 seconds is used.
 	Timeout time.Duration
 }
+
+// WithRustDataPath provides an [option.ClientOption] that may be passed to
+// [cloud.google.com/go/storage.NewClient]. It routes object reads and writes through the shared
+// Rust GCS engine when the binary was built with `-tags gcsrust` and cgo on a supported
+// platform; everything else (and any request using options the engine cannot honour) keeps
+// using the Go JSON/XML client. Without the build tag this option is a no-op.
+//
+// PROOF OF CONCEPT: not supported, may be removed at any time.
+func WithRustDataPath() option.ClientOption {
+	return internal.WithRustDataPath.(func() option.ClientOption)()
+}
+
+// RustEngineStats reports counters of the Rust data path (engine reads/writes, fallbacks to
+// the Go path, FFI calls, async completions). Empty when the engine is not compiled in.
+//
+// PROOF OF CONCEPT: not supported, may be removed at any time.
+func RustEngineStats() map[string]int64 {
+	return internal.RustEngineStats.(func() map[string]int64)()
+}

@@ -47,6 +47,8 @@ func init() {
 	storageinternal.WithOtelDebugMetrics = withOtelDebugMetrics
 	storageinternal.WithBufferPool = withBufferPool
 	storageinternal.WithGRPCKeepalive = withGRPCKeepalive
+	storageinternal.WithRustDataPath = withRustDataPath
+	storageinternal.RustEngineStats = rustEngineStats
 }
 
 // getDynamicReadReqIncreaseRateFromEnv returns the value set in the env variable.
@@ -96,7 +98,16 @@ type storageConfig struct {
 	grpcDirectPathEnforced bool
 	bufferPool             experimental.BufferPool
 	grpcKeepalive          *experimental.GRPCKeepaliveConfig
+	rustDataPath           bool
 }
+
+type withRustDataPathConfig struct {
+	internaloption.EmbeddableAdapter
+}
+
+func withRustDataPath() option.ClientOption { return &withRustDataPathConfig{} }
+
+func (w *withRustDataPathConfig) ApplyStorageOpt(c *storageConfig) { c.rustDataPath = true }
 
 // newStorageConfig generates a new storageConfig with all the given
 // storageClientOptions applied.

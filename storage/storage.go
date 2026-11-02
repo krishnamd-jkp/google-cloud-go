@@ -244,6 +244,12 @@ func NewClient(ctx context.Context, opts ...option.ClientOption) (*Client, error
 			isHTTP:        true,
 		}
 	}
+	if newStorageConfig(opts...).rustDataPath {
+		// Object reads/writes via the Rust engine when compiled in; no-op otherwise.
+		if tcWrapped, err = newRustStorageClient(ctx, tcWrapped, ep, creds, nil); err != nil {
+			return nil, fmt.Errorf("storage: rust data path: %w", err)
+		}
+	}
 
 	c := &Client{
 		hc:        hc,
