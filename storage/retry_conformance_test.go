@@ -1118,7 +1118,7 @@ func TestRetryConformance(t *testing.T) {
 					}
 					for i, fn := range methods[methodName] {
 						transports := []string{"http", "grpc"}
-						if rustDataPathCompiled {
+						if rustCoreCompiled {
 							transports = append(transports, "rust")
 						}
 						for _, transport := range transports {

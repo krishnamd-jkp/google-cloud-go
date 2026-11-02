@@ -70,3 +70,25 @@ func rustcoreToken(user C.uintptr_t, outToken **C.char, outExpiry *C.int64_t, ou
 	}
 	return 0
 }
+
+// RetryPredicate classifies an error reported by the core: true = retry. Idempotency and the
+// retry policy are still enforced by the core; the predicate only classifies errors. It runs
+// on a core thread and must be fast.
+type RetryPredicate func(err *Error, attempt int) bool
+
+// RegisterRetryPredicate makes p callable by the core. The returned handle goes into the
+// options JSON (retry.predicate); call release once the operation using it has completed.
+func RegisterRetryPredicate(p RetryPredicate) (handle uint64, release func()) {
+	h := cgo.NewHandle(p)
+	return uint64(h), h.Delete
+}
+
+//export rustcoreRetry
+func rustcoreRetry(predicate C.uintptr_t, st C.GcsStatus, attempt C.uint32_t) C.int32_t {
+	err := takeStatus(st)
+	p := cgo.Handle(predicate).Value().(RetryPredicate)
+	if err != nil && p(err, int(attempt)) {
+		return 1
+	}
+	return 0
+}

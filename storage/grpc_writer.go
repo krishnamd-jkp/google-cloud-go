@@ -27,7 +27,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	gapic "cloud.google.com/go/storage/internal/apiv2"
 	"cloud.google.com/go/storage/internal/apiv2/storagepb"
 	gax "github.com/googleapis/gax-go/v2"
 	"google.golang.org/api/googleapi"
@@ -1363,7 +1362,7 @@ type gRPCBidiWriteBufferSender interface {
 }
 
 type gRPCOneshotBidiWriteBufferSender struct {
-	raw          *gapic.Client
+	raw          storageRPC
 	bucket       string
 	firstMessage *storagepb.BidiWriteObjectRequest
 	streamErr    error
@@ -1501,7 +1500,7 @@ func (s *gRPCOneshotBidiWriteBufferSender) connect(ctx context.Context, cs gRPCB
 }
 
 type gRPCResumableBidiWriteBufferSender struct {
-	raw    *gapic.Client
+	raw    storageRPC
 	bucket string
 
 	startWriteRequest *storagepb.StartResumableWriteRequest
@@ -1764,7 +1763,7 @@ func (s *gRPCResumableBidiWriteBufferSender) connect(ctx context.Context, cs gRP
 }
 
 type gRPCAppendBidiWriteBufferSender struct {
-	raw          *gapic.Client
+	raw          storageRPC
 	bucket       string
 	routingToken *string
 

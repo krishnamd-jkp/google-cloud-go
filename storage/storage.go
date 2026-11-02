@@ -244,10 +244,10 @@ func NewClient(ctx context.Context, opts ...option.ClientOption) (*Client, error
 			isHTTP:        true,
 		}
 	}
-	if newStorageConfig(opts...).rustDataPath {
-		// Object reads/writes via the Rust engine when compiled in; no-op otherwise.
-		if tcWrapped, err = newRustStorageClient(ctx, tcWrapped, ep, creds, nil); err != nil {
-			return nil, fmt.Errorf("storage: rust data path: %w", err)
+	if newStorageConfig(opts...).rustCore {
+		// EXPERIMENTAL: every operation is served by the shared Rust core (rust_client.go).
+		if tcWrapped, err = newRustCoreClient(ctx, ep, creds, nil, withClientOptions(opts...)); err != nil {
+			return nil, fmt.Errorf("storage: rust core: %w", err)
 		}
 	}
 
@@ -2727,6 +2727,9 @@ type retryConfig struct {
 	// maxRetryDuration, if set, specifies a deadline after which the request
 	// will no longer be retried. A value of 0 allows infinite retries.
 	maxRetryDuration time.Duration
+	// engine marks calls served by the Rust core (experimental), which owns retries: run()
+	// then makes exactly one attempt and passes this configuration to the core.
+	engine bool
 }
 
 func (r *retryConfig) clone() *retryConfig {

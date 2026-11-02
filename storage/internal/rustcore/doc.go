@@ -12,11 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package rustcore contains the cgo bindings to the Rust GCS engine (gcs_core v2) used by the
-// opt-in Rust data path of cloud.google.com/go/storage.
+// Package rustcore contains the cgo bindings to the shared Rust core (gcs_core v3) that serves
+// every operation of cloud.google.com/go/storage when experimental.WithRustCore is used.
+//
+// The bindings are generic: they move proto3-JSON requests/responses, options JSON and object
+// bytes across the C ABI (gcs_core.h) and contain no Cloud Storage logic, so they do not change
+// when the storage API grows.
 //
 // The bindings are only compiled with `-tags gcsrust` and cgo enabled, on platforms for which
-// a prebuilt engine is shipped. Everywhere else this package is empty and the storage package
+// a prebuilt core is shipped. Everywhere else this package is empty and the storage package
 // uses its pure-Go transports, so `CGO_ENABLED=0`, cross-compiled and static builds keep
 // working unchanged.
 //

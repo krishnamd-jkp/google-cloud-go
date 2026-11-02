@@ -1,111 +1,116 @@
-# Rust data path for `cloud.google.com/go/storage` (proof of concept)
+# Go SDK on the shared Rust core (proof of concept)
 
-**Experimental. Not a supported API.** This directory holds the FFI bindings and the Rust engine
-behind `experimental.WithRustDataPath()`. When the option is on, object reads and writes go
-Go → cgo → Rust (`google-cloud-storage` crate). Everything else stays on the pure-Go client.
-The public `storage` API is unchanged.
+**Experimental. Not a supported API.** With `experimental.WithRustCore()`, *every* operation
+of `cloud.google.com/go/storage` is served by one Rust core (`gcs_core`, built on the
+`google-cloud-storage` crate). The public `storage` API is unchanged.
 
 ```text
 storage.Client ── tc ──► rustStorageClient (storage/rust_client.go)
-                          ├─ NewRangeReader / OpenWriter ──► internal/rustcore (cgo) ──► gcs_core (Rust, static lib)
-                          └─ everything else, and unsupported options ──► httpStorageClient (pure Go)
+                          ├─ metadata RPCs: grpcStorageClient (Go API <-> v2 protos, unchanged)
+                          │      └─ raw = rustRPC (storage/rust_transport.go) ─┐
+                          └─ object reads / writes ────────────────────────────┤
+                                                                               ▼
+                               internal/rustcore (generic cgo binding: bytes in, bytes out)
+                                                                               ▼
+                               gcs_core (Rust): transport, auth, retries, idempotency,
+                               uploads, checksums, read resumption, error classification
 ```
+
+What stays in Go is what is inherently per-language: the public API, the mapping between Go
+types and `google.storage.v2` protos (the existing gRPC-transport code, reused as-is) and
+Go-specific API semantics (e.g. `Writer` Content-Type sniffing). No Go retry loop runs: `run()`
+makes one call and hands the caller's retry configuration to the core.
+
+## The ABI (`gcs_core.h`)
+
+Generic, so it does not change when the storage API grows:
+
+| Entry point | Payload |
+|---|---|
+| `gcs_call(method, req, opts)` | every unary v2 RPC (17 today); proto3-JSON request -> proto3-JSON response |
+| `gcs_read_open` / `gcs_reader_*` | proto3-JSON `ReadObjectRequest`; bytes out |
+| `gcs_write_open` / `gcs_writer_*` | `StartResumableWriteRequest`-shaped JSON; bytes in, `Object` out |
+| `opts` (JSON) | caller policy only: retry policy/limits/backoff/predicate, userProject, headers, read/write tuning |
+
+FieldMask fields travel as JSON arrays of raw paths (proto3 JSON cannot carry `*` or
+`metadata.<key>`).
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `gcs_core/` | Rust engine (C ABI). See `src/lib.rs` (contract, client, runtime), `reader.rs`, `writer.rs`, `creds.rs`, `retry.rs` |
-| `gcs_core.h` | Hand-written C header for the ABI |
-| `rustcore.go`, `callbacks.go` | cgo bindings (`Client`, `Reader`, `Writer`, error mapping, exactly-once completions) |
-| `link_linux_amd64.go` | Links `lib/linux_amd64/libgcs_core.a` (one file per supported GOOS/GOARCH) |
-| `build.sh` | Builds the engine and installs it into `lib/<goos>_<goarch>/` (git-ignored) |
-| `cmd/rustbench/` | Go-vs-Rust benchmark on the same workload |
-| `../../rust_client.go` | `rustStorageClient`: routing, fallbacks, error mapping, credentials bridge |
-| `../../rust_client_stub.go` | No-op when the engine is not compiled in |
-| `../../rust_datapath_test.go` | Regression tests (real GCS or testbench) |
+| `gcs_core/src/lib.rs` | safety contract, status (gRPC + HTTP codes), runtime, client |
+| `gcs_core/src/call.rs` | `gcs_call`: dispatch of every unary v2 RPC |
+| `gcs_core/src/policy.rs` | per-RPC idempotency rules (decided from the request) |
+| `gcs_core/src/options.rs` | options JSON: retry/backoff/predicate, user project, headers |
+| `gcs_core/src/reader.rs`, `writer.rs`, `creds.rs` | streaming reads, uploads, credentials bridge |
+| `gcs_core.h` | hand-written C header for the ABI |
+| `rustcore.go`, `callbacks.go` | generic cgo binding (`Call`, `Reader`, `Writer`, completions, token and retry callbacks) |
+| `link_linux_amd64.go` | links `lib/linux_amd64/libgcs_core.a` (one file per supported GOOS/GOARCH) |
+| `build.sh` | builds the core and installs it into `lib/<goos>_<goarch>/` (git-ignored) |
+| `../../storage_rpc.go` | `storageRPC`: the seam between the Go API mapping and the transport |
+| `../../rust_transport.go` | `rustRPC`: one line per RPC, plus generic encode/options/error plumbing |
+| `../../rust_client.go` | `rustStorageClient`: construction, reads, writes |
+| `../../rust_core_test.go` | tests against real GCS (or the testbench) |
 
-Build tags: the engine is compiled in only with `-tags gcsrust`, cgo enabled, on linux/amd64.
-With any other combination (`CGO_ENABLED=0`, cross-compiles, no tag) the option is a no-op
-and the pure-Go transport is used, so the module still builds everywhere.
+Build tags: the core is compiled in only with `-tags gcsrust`, cgo enabled, on linux/amd64.
+Without them the module builds and behaves exactly as before; `WithRustCore()` then makes
+`NewClient` return an error.
 
-## Build and run
+## Build and test
 
 Requires Go 1.24+ and Rust (rustup, stable). The default `ring` crypto provider needs no cmake.
 
 ```bash
 cd storage
 
-# 1. Build the Rust engine (~2–3 min cold, ~1 min incremental) -> internal/rustcore/lib/linux_amd64/
+# 1. Build the Rust core (~3 min cold) -> internal/rustcore/lib/linux_amd64/libgcs_core.a
 ./internal/rustcore/build.sh
 
-# 2. Build: pure Go (unchanged), no-cgo (unchanged), and with the engine
+# 2. Build: pure Go (unchanged), no-cgo (unchanged), and with the core
 go build ./... && CGO_ENABLED=0 go build ./... && go build -tags gcsrust ./...
-go vet -tags gcsrust . ./internal/rustcore
+go vet -tags gcsrust . ./internal/rustcore/...
 
-# 3. Regression tests against real GCS (objects under rustdp/<run-id>/, deleted afterwards)
-RUST_DP_TEST_BUCKET=<your-bucket> go test -tags gcsrust -short -run TestRustDataPath -v .
-#    ... also under the race detector:
-RUST_DP_TEST_BUCKET=<your-bucket> go test -race -tags gcsrust -short -run TestRustDataPath -v .
-
-# 4. FFI micro-benchmarks (sync call vs async completion)
-go test -tags gcsrust -run XXX -bench . ./internal/rustcore
-
-# 5. Go vs Rust on the same workload (separate processes)
-go build -tags gcsrust -o /tmp/rustbench ./internal/rustcore/cmd/rustbench
-/tmp/rustbench -backend go   -bucket <your-bucket> -size 16777216 -iters 3
-/tmp/rustbench -backend rust -bucket <your-bucket> -size 16777216 -iters 3
-/tmp/rustbench -backend rust -bucket <your-bucket> -size 16777216 -iters 3 -style 32k
+# 3. Tests against real GCS (objects under rustcore/<run-id>/, deleted afterwards)
+RUST_DP_TEST_BUCKET=<your-bucket> go test -short -tags gcsrust -run TestRustCore -v .
+RUST_DP_TEST_BUCKET=<your-bucket> go test -short -race -tags gcsrust -run TestRustCore -v .
 ```
 
 Using it from code:
 
 ```go
-client, err := storage.NewClient(ctx, experimental.WithRustDataPath()) // build with -tags gcsrust
+client, err := storage.NewClient(ctx, experimental.WithRustCore()) // build with -tags gcsrust
 ```
 
 ### Emulator (storage-testbench)
 
-Reads and the read retry-conformance suite run on the testbench. **Uploads from the Rust SDK
-do not work there**: multipart uploads get a 500 because the media part has no Content-Type,
-and resumable PUT bodies hang. This is a Rust SDK/testbench incompatibility, not a binding bug.
+The control plane goes to the testbench's gRPC port (`STORAGE_EMULATOR_HOST_GRPC`), the data
+path to its JSON port. **Uploads from the Rust SDK do not work on the testbench** (multipart
+uploads get a 500 because the media part has no Content-Type; resumable PUT bodies hang), so
+write tests need real GCS.
 
-```bash
-docker run --rm -d --net=host gcr.io/cloud-devrel-public-resources/storage-testbench:latest
-curl "http://localhost:9000/start_grpc?port=8888"
-export STORAGE_EMULATOR_HOST=http://localhost:9000 STORAGE_EMULATOR_HOST_GRPC=localhost:8888
-go test -tags gcsrust -short -run 'Test(OpenReader|NewRangeReaderRemain)Emulated' -v .
-go test -tags gcsrust -short -run 'TestRetryConformance/(rust|http)-.*storage.objects.get' -v .
-```
+## Coverage
 
-## What the engine handles, and what falls back to Go
+* **Served by the core:** bucket create/get/update/delete/list/lock-retention, object
+  get/update/delete/list/compose/rewrite (copy)/move/restore, IAM get/set/test, ACL helpers
+  (via bucket/object update, as in the gRPC client), reads (range, tail, metadata-only,
+  preconditions, CSEK, decompression, CRC32C), writes (single-shot and resumable, all
+  attributes incl. retention/contexts, preconditions, CSEK, user MD5/CRC32C), retry policy,
+  `WithMaxAttempts`, `WithMaxRetryDuration`, `WithBackoff`, `WithErrorFunc` (evaluated by the
+  core through a callback), `userProject`, per-call headers on metadata RPCs, any Go
+  credential (token callback).
+* **Not supported (same as Go's gRPC client):** HMAC keys, Pub/Sub notifications,
+  `GetServiceAccount` (JSON-only APIs, absent from the v2 protos).
+* **Not wired up yet:** `MultiRangeDownloader` (the Rust SDK has `open_object`), appendable
+  uploads (the Rust SDK has `open_appendable_object`), `Writer.Flush`.
+* **Rust SDK gaps found:** per-call headers on reads/writes, `CacheControl`/`LastModified` in
+  read metadata, no built-in per-RPC idempotency in the control client (implemented here).
 
-* **Engine:**
-  * reads: full, range and tail reads, generation, all 4 preconditions, CSEK, `ReadCompressed`/decompressive transcoding, CRC32C validation and resume;
-  * writes: single-shot and resumable, all editable attributes, user MD5/CRC32C, KMS, ACLs, all 4 preconditions, CSEK, retry policy, max attempts, max duration, backoff;
-  * context cancellation everywhere (a cancelled upload is never finalized);
-  * any Go credential, through a token callback.
-* **Falls back to Go:**
-  * zero-length reads;
-  * `WithErrorFunc`;
-  * `userProject`;
-  * `ChunkSize == 0`;
-  * `ChunkRetryDeadline` / `ChunkTransferTimeout`;
-  * appendable writes;
-  * `Retention` / `Contexts`;
-  * every non-object operation (list, metadata, ACLs, IAM, HMAC, notifications, …);
-  * clients built without Go credentials (e.g. a custom `http.Client`).
-* **Not available on the engine path:**
-  * `ReaderObjectAttrs.CacheControl` / `LastModified`;
-  * per-call headers (`callctx.SetHeaders`);
-  * `DisableAutoChecksum`;
-  * mTLS/S2A;
-  * `x-goog-api-client` attribution (reports Rust).
-
-## Design notes (why the bindings look like this)
+## Design notes
 
 * **Panics.** Every exported Rust function is panic-guarded, and background tasks are wrapped, so a panic becomes an error, never an abort or a lost callback.
 * **Handle lifetime.** Handles are `Arc`-backed; Go guards the raw pointer with a mutex, so `Close` racing `Read` is safe.
 * **Completions.** Async completions fire exactly once. User data is a `uintptr_t` `cgo.Handle`, never an `unsafe.Pointer`, which keeps `go vet` and checkptr (`-race`) clean.
-* **Hot path.** Reads drain a bounded prefetch queue synchronously (about 32 ns per call) and only wait asynchronously (tens of µs) when the network is behind. Writes copy into a bounded queue in messages of at most 1 MiB, so Rust-side buffering is bounded in bytes.
+* **Hot path.** Reads drain a bounded prefetch queue synchronously and only wait asynchronously when the network is behind. Writes copy into a bounded queue in messages of at most 1 MiB, so Rust-side buffering is bounded in bytes.
 * **No partial commits.** Uploads finalize only on an explicit Close. Abort, cancellation, or dropping the handle never finalizes a partial object.
+* **Errors.** The core fills in both the gRPC code and the HTTP status, so Go errors satisfy both `status.FromError` and `errors.As(*googleapi.Error)` regardless of the transport the core used.

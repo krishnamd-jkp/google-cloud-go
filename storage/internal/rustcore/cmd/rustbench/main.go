@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Command rustbench compares the pure-Go data path with the Rust data path
-// (experimental.WithRustDataPath) on the same W1R3 workload: 1 write + 3 reads per iteration.
+// Command rustbench compares the pure-Go client with the Rust core
+// (experimental.WithRustCore) on the same W1R3 workload: 1 write + 3 reads per iteration.
 // Run each backend in its own process so CPU accounting (getrusage, Go + Rust threads) is clean:
 //
 //	go build -tags gcsrust -o /tmp/rustbench ./internal/rustcore/cmd/rustbench
@@ -89,7 +89,7 @@ func main() {
 	case "go":
 		c, err = storage.NewClient(ctx)
 	case "rust":
-		c, err = storage.NewClient(ctx, experimental.WithRustDataPath())
+		c, err = storage.NewClient(ctx, experimental.WithRustCore())
 	default:
 		log.Fatalf("unknown -backend %q", *backend)
 	}
@@ -151,10 +151,8 @@ func main() {
 	gib := float64(*size) * float64(4**iters) / (1 << 30)
 	ops := float64(4 * *iters)
 	engine := "pure Go"
-	if stats["reads"] > stats0["reads"] {
-		engine = "Rust engine"
-	} else if *backend == "rust" {
-		engine = "pure Go (engine not compiled in: build with -tags gcsrust and CGO_ENABLED=1)"
+	if stats["ffi_calls"] > stats0["ffi_calls"] {
+		engine = "Rust core"
 	}
 	fmt.Printf("backend=%s (%s) style=%s size=%dMiB iters=%d\n", *backend, engine, *style, *size>>20, *iters)
 	fmt.Printf("  write p50=%v  read p50=%v  cpu=%.2f s/GiB  ffi/op=%.0f  async/op=%.0f  max_threads=%d  peak_rss=%dMiB\n",

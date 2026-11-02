@@ -16,11 +16,16 @@
 
 package storage
 
-// Regression tests for the defects found in the original POC bridge, run through the public
-// storage API with experimental.WithRustDataPath() against the storage testbench.
+// Tests of the Go SDK served entirely by the Rust core (experimental.WithRustCore), through the
+// public storage API, compared against the pure-Go client:
 //
-//	STORAGE_EMULATOR_HOST=http://localhost:9000 STORAGE_EMULATOR_HOST_GRPC=localhost:8888 \
-//	  go test -tags gcsrust -race -run TestRustDataPath ./...
+//   - data path: regression tests for every defect found in the original POC bridge;
+//   - control plane: metadata, update masks with arbitrary map keys, list/paging, copy/compose,
+//     bucket metadata, IAM;
+//   - policy hand-off: one FFI call per operation (no Go retry loop), retry predicates
+//     evaluated by the core, error shapes.
+//
+//	RUST_DP_TEST_BUCKET=<bucket> go test -tags gcsrust -race -run TestRustCore ./...
 
 import (
 	"bytes"
@@ -34,25 +39,31 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/storage/experimental"
 	"cloud.google.com/go/storage/internal/rustcore"
+	gax "github.com/googleapis/gax-go/v2"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/iterator"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // rustTestPrefix isolates object names of one test run (shared real buckets).
 var rustTestPrefix string
 
-// rustTestClients returns a Rust-data-path client and a pure-Go client. Two modes:
+// rustTestClients returns a Rust-core client and a pure-Go client. Two modes:
 //   - RUST_DP_TEST_BUCKET=<bucket>: real GCS with ADC (objects under a unique prefix);
-//   - STORAGE_EMULATOR_HOST: storage testbench (a fresh bucket). Note: the testbench cannot
-//     complete uploads made by the Rust SDK (multipart 500s, resumable PUTs hang), so write
-//     tests only pass against real GCS.
+//   - STORAGE_EMULATOR_HOST (+ STORAGE_EMULATOR_HOST_GRPC): storage testbench (a fresh bucket).
+//     Note: the testbench cannot complete uploads made by the Rust SDK (multipart 500s,
+//     resumable PUTs hang), so write tests only pass against real GCS.
 func rustTestClients(t *testing.T) (rust, native *Client, bucket string) {
 	t.Helper()
 	ctx := context.Background()
@@ -64,13 +75,13 @@ func rustTestClients(t *testing.T) (rust, native *Client, bucket string) {
 	if native, err = NewClient(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if rust, err = NewClient(ctx, experimental.WithRustDataPath()); err != nil {
+	if rust, err = NewClient(ctx, experimental.WithRustCore()); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := rust.tc.(*rustStorageClient); !ok {
-		t.Fatalf("rust data path not active: %T", rust.tc)
+		t.Fatalf("rust core not active: %T", rust.tc)
 	}
-	rustTestPrefix = fmt.Sprintf("rustdp/%d/%s/", time.Now().UnixNano(), t.Name())
+	rustTestPrefix = fmt.Sprintf("rustcore/%d/%s/", time.Now().UnixNano(), t.Name())
 	if realBucket != "" {
 		bucket = realBucket
 		t.Cleanup(func() {
@@ -84,7 +95,7 @@ func rustTestClients(t *testing.T) (rust, native *Client, bucket string) {
 			}
 		})
 	} else {
-		bucket = fmt.Sprintf("rustdp-%d", time.Now().UnixNano())
+		bucket = fmt.Sprintf("rustcore-%d", time.Now().UnixNano())
 		if err := native.Bucket(bucket).Create(ctx, "rust-project", nil); err != nil {
 			t.Fatal(err)
 		}
@@ -111,7 +122,17 @@ func writeObj(t *testing.T, c *Client, bucket, name string, data []byte) *Object
 	return w.Attrs()
 }
 
-func TestRustDataPathRoundTrip(t *testing.T) {
+func httpCode(err error) int {
+	var ge *googleapi.Error
+	if errors.As(err, &ge) {
+		return ge.Code
+	}
+	return 0
+}
+
+// ---- Data path -------------------------------------------------------------------------------
+
+func TestRustCoreRoundTrip(t *testing.T) {
 	rc, nc, bucket := rustTestClients(t)
 	ctx := context.Background()
 	for _, size := range []int{0, 1, 511, 512, 64 << 10, 16<<20 - 1, 16 << 20, 40 << 20} {
@@ -121,7 +142,7 @@ func TestRustDataPathRoundTrip(t *testing.T) {
 		if attrs == nil || attrs.Size != int64(size) || attrs.Generation == 0 || attrs.CRC32C == 0 && size > 0 {
 			t.Fatalf("size %d: bad attrs from Rust writer: %+v", size, attrs)
 		}
-		// Read back through both paths.
+		// Read back through both clients.
 		for _, c := range []*Client{rc, nc} {
 			r, err := c.Bucket(bucket).Object(rustTestPrefix + name).NewReader(ctx)
 			if err != nil {
@@ -134,13 +155,12 @@ func TestRustDataPathRoundTrip(t *testing.T) {
 			}
 		}
 	}
-	reads, writes, rf, wf := rustDataPathStats()
-	t.Logf("engine reads=%d writes=%d read-fallbacks=%d write-fallbacks=%d", reads, writes, rf, wf)
+	t.Logf("core stats: %v", rustEngineStats())
 }
 
 // POC defect: cancelling the ctx during Close dropped the channel (=> EOF) and detached the
 // upload task, so the object was finalized while Close returned context.Canceled.
-func TestRustDataPathCancelDuringCloseDoesNotCommit(t *testing.T) {
+func TestRustCoreCancelDuringCloseDoesNotCommit(t *testing.T) {
 	rc, nc, bucket := rustTestClients(t)
 	data := randBytes(48 << 20)
 	committed := 0
@@ -182,7 +202,7 @@ func rssKB() int64 {
 
 // POC defect: a ctx cancelled mid-Write left the Rust upload task blocked forever with its
 // buffers (Close returned early without freeing the handle).
-func TestRustDataPathCancelDuringWriteNoLeak(t *testing.T) {
+func TestRustCoreCancelDuringWriteNoLeak(t *testing.T) {
 	rc, nc, bucket := rustTestClients(t)
 	chunk := randBytes(1 << 20)
 	run := func(i int) {
@@ -225,17 +245,10 @@ func TestRustDataPathCancelDuringWriteNoLeak(t *testing.T) {
 // POC defects: preconditions other than GenerationMatch/DoesNotExist were silently dropped,
 // and the 412 lost its HTTP status on the way to Go. Each failed precondition must surface as
 // the same *googleapi.Error code the pure-Go client returns (412, or 304 for *NotMatch).
-func TestRustDataPathPreconditions(t *testing.T) {
+func TestRustCorePreconditions(t *testing.T) {
 	rc, nc, bucket := rustTestClients(t)
 	ctx := context.Background()
 	attrs := writeObj(t, rc, bucket, "pre", []byte("v1"))
-	code := func(err error) int {
-		var ge *googleapi.Error
-		if errors.As(err, &ge) {
-			return ge.Code
-		}
-		return 0
-	}
 	cases := []Conditions{
 		{DoesNotExist: true},
 		{GenerationMatch: attrs.Generation + 1},
@@ -248,14 +261,14 @@ func TestRustDataPathPreconditions(t *testing.T) {
 		for i, c := range []*Client{nc, rc} {
 			w := c.Bucket(bucket).Object(rustTestPrefix + "pre").If(cond).NewWriter(ctx)
 			w.Write([]byte("v2"))
-			got[i] = code(w.Close())
+			got[i] = httpCode(w.Close())
 		}
 		if got[1] == 0 || got[0] != got[1] {
 			t.Errorf("write with %+v: native googleapi code %d, rust %d", cond, got[0], got[1])
 		}
 	}
 	// Reads: a failed precondition must not return data.
-	if _, err := rc.Bucket(bucket).Object(rustTestPrefix + "pre").If(Conditions{MetagenerationMatch: attrs.Metageneration + 7}).NewReader(ctx); code(err) != http.StatusPreconditionFailed {
+	if _, err := rc.Bucket(bucket).Object(rustTestPrefix + "pre").If(Conditions{MetagenerationMatch: attrs.Metageneration + 7}).NewReader(ctx); httpCode(err) != http.StatusPreconditionFailed {
 		t.Errorf("read with bad MetagenerationMatch: want 412, got %v", err)
 	}
 	if _, err := rc.Bucket(bucket).Object(rustTestPrefix + "does-not-exist").NewReader(ctx); !errors.Is(err, ErrObjectNotExist) {
@@ -264,7 +277,7 @@ func TestRustDataPathPreconditions(t *testing.T) {
 }
 
 // POC defect: Metadata, Cache-Control, Content-* and user checksums were silently dropped.
-func TestRustDataPathWriterAttrsAndChecksums(t *testing.T) {
+func TestRustCoreWriterAttrsAndChecksums(t *testing.T) {
 	rc, nc, bucket := rustTestClients(t)
 	ctx := context.Background()
 	data := []byte(strings.Repeat("hello rust ", 100))
@@ -302,7 +315,7 @@ func TestRustDataPathWriterAttrsAndChecksums(t *testing.T) {
 	}
 }
 
-func TestRustDataPathRangeSemantics(t *testing.T) {
+func TestRustCoreRangeSemantics(t *testing.T) {
 	rc, nc, bucket := rustTestClients(t)
 	ctx := context.Background()
 	data := randBytes(100)
@@ -330,7 +343,7 @@ func TestRustDataPathRangeSemantics(t *testing.T) {
 }
 
 // POC defect: the engine returned stored gzip bytes where Go returns decompressed content.
-func TestRustDataPathGzipTranscoding(t *testing.T) {
+func TestRustCoreGzipTranscoding(t *testing.T) {
 	rc, nc, bucket := rustTestClients(t)
 	ctx := context.Background()
 	plain := []byte(strings.Repeat("compressible ", 1000))
@@ -364,7 +377,7 @@ func TestRustDataPathGzipTranscoding(t *testing.T) {
 }
 
 // POC defect: Close() concurrent with an in-flight Read freed memory still used by a task.
-func TestRustDataPathConcurrentCloseDuringRead(t *testing.T) {
+func TestRustCoreConcurrentCloseDuringRead(t *testing.T) {
 	rc, nc, bucket := rustTestClients(t)
 	writeObj(t, nc, bucket, "big", randBytes(32<<20))
 	for i := 0; i < 50; i++ {
@@ -384,7 +397,7 @@ func TestRustDataPathConcurrentCloseDuringRead(t *testing.T) {
 	}
 }
 
-func TestRustDataPathMidStreamCancel(t *testing.T) {
+func TestRustCoreMidStreamCancel(t *testing.T) {
 	rc, nc, bucket := rustTestClients(t)
 	writeObj(t, nc, bucket, "stream", randBytes(64<<20))
 	ctx, cancel := context.WithCancel(context.Background())
@@ -414,8 +427,8 @@ func TestRustDataPathMidStreamCancel(t *testing.T) {
 	}
 }
 
-// The engine must not be fooled by small io.Copy-style writes/reads: crossings stay bounded.
-func TestRustDataPathCrossingsBounded(t *testing.T) {
+// Small io.Copy-style writes/reads must not translate into one crossing each.
+func TestRustCoreCrossingsBounded(t *testing.T) {
 	rc, _, bucket := rustTestClients(t)
 	ctx := context.Background()
 	data := randBytes(32 << 20)
@@ -437,4 +450,226 @@ func TestRustDataPathCrossingsBounded(t *testing.T) {
 	}
 	t.Logf("32 MiB write+read with 32 KiB calls: %d FFI calls, %d async completions",
 		rustcore.FFICalls.Load()-f0, rustcore.AsyncOps.Load()-a0)
+}
+
+// ---- Control plane ---------------------------------------------------------------------------
+
+// Object metadata through the core: Attrs, Update (including metadata keys that proto3 JSON
+// field masks cannot represent), conditional update, Delete, error shapes.
+func TestRustCoreObjectMetadata(t *testing.T) {
+	rc, nc, bucket := rustTestClients(t)
+	ctx := context.Background()
+	writeObj(t, nc, bucket, "meta", []byte("metadata test"))
+	obj := rustTestPrefix + "meta"
+
+	ra, err := rc.Bucket(bucket).Object(obj).Attrs(ctx)
+	if err != nil {
+		t.Fatalf("rust Attrs: %v", err)
+	}
+	na, err := nc.Bucket(bucket).Object(obj).Attrs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ra.Name != na.Name || ra.Size != na.Size || ra.Generation != na.Generation || ra.Metageneration != na.Metageneration ||
+		ra.CRC32C != na.CRC32C || !bytes.Equal(ra.MD5, na.MD5) || ra.ContentType != na.ContentType || ra.StorageClass != na.StorageClass {
+		t.Errorf("Attrs differ:\n rust   %+v\n native %+v", ra, na)
+	}
+
+	// Keys with upper case, dashes and underscores: not representable in a proto3-JSON mask.
+	md := map[string]string{"X-Custom-Key": "1", "camelCase": "2", "with_underscore": "3", "lower": "4"}
+	ua, err := rc.Bucket(bucket).Object(obj).Update(ctx, ObjectAttrsToUpdate{Metadata: md, ContentLanguage: "fr"})
+	if err != nil {
+		t.Fatalf("rust Update: %v", err)
+	}
+	got, err := nc.Bucket(bucket).Object(obj).Attrs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range md {
+		if got.Metadata[k] != v {
+			t.Errorf("metadata %q = %q, want %q (all: %v)", k, got.Metadata[k], v, got.Metadata)
+		}
+	}
+	if got.ContentLanguage != "fr" || ua.Metageneration != got.Metageneration {
+		t.Errorf("update not applied: lang=%q metagen rust=%d native=%d", got.ContentLanguage, ua.Metageneration, got.Metageneration)
+	}
+
+	// Conditional update with a stale metageneration: FailedPrecondition / 412.
+	_, err = rc.Bucket(bucket).Object(obj).If(Conditions{MetagenerationMatch: ra.Metageneration}).Update(ctx, ObjectAttrsToUpdate{ContentLanguage: "de"})
+	if status.Code(err) != codes.FailedPrecondition || httpCode(err) != http.StatusPreconditionFailed {
+		t.Errorf("stale conditional update: want FailedPrecondition/412, got %v (code %v, http %d)", err, status.Code(err), httpCode(err))
+	}
+
+	if err := rc.Bucket(bucket).Object(obj).Delete(ctx); err != nil {
+		t.Fatalf("rust Delete: %v", err)
+	}
+	if _, err := nc.Bucket(bucket).Object(obj).Attrs(ctx); !errors.Is(err, ErrObjectNotExist) {
+		t.Errorf("after rust Delete: native Attrs = %v, want ErrObjectNotExist", err)
+	}
+	_, err = rc.Bucket(bucket).Object(obj).Attrs(ctx)
+	if !errors.Is(err, ErrObjectNotExist) || status.Code(err) != codes.NotFound || httpCode(err) != http.StatusNotFound {
+		t.Errorf("missing object: want ErrObjectNotExist/NotFound/404, got %v", err)
+	}
+}
+
+// Listing through the core, compared with the pure-Go client, with tiny pages.
+func TestRustCoreListObjects(t *testing.T) {
+	rc, nc, bucket := rustTestClients(t)
+	ctx := context.Background()
+	for _, n := range []string{"a/1", "a/2", "a/b/3", "c", "d/4"} {
+		writeObj(t, nc, bucket, "list/"+n, []byte(n))
+	}
+	list := func(c *Client, q *Query) (names []string, pages int) {
+		it := c.Bucket(bucket).Objects(ctx, q)
+		p := iterator.NewPager(it, 2, "")
+		for {
+			var page []*ObjectAttrs
+			tok, err := p.NextPage(&page)
+			if err != nil {
+				t.Fatalf("list %+v: %v", q, err)
+			}
+			pages++
+			for _, a := range page {
+				if a.Prefix != "" {
+					names = append(names, "prefix:"+strings.TrimPrefix(a.Prefix, rustTestPrefix))
+				} else {
+					names = append(names, strings.TrimPrefix(a.Name, rustTestPrefix))
+				}
+			}
+			if tok == "" {
+				break
+			}
+		}
+		sort.Strings(names)
+		return names, pages
+	}
+	for _, q := range []*Query{
+		{Prefix: rustTestPrefix + "list/"},
+		{Prefix: rustTestPrefix + "list/", Delimiter: "/"},
+		{Prefix: rustTestPrefix + "list/a/", StartOffset: rustTestPrefix + "list/a/2"},
+	} {
+		rn, rp := list(rc, q)
+		nn, _ := list(nc, q)
+		if strings.Join(rn, ",") != strings.Join(nn, ",") {
+			t.Errorf("list %+v:\n rust   %v\n native %v", q, rn, nn)
+		}
+		t.Logf("list prefix=%q delim=%q: %d entries in %d pages", strings.TrimPrefix(q.Prefix, rustTestPrefix), q.Delimiter, len(rn), rp)
+	}
+}
+
+// Copier (RewriteObject) and Composer (ComposeObject) through the core.
+func TestRustCoreCopyAndCompose(t *testing.T) {
+	rc, nc, bucket := rustTestClients(t)
+	ctx := context.Background()
+	a, b := randBytes(300<<10), randBytes(200<<10)
+	writeObj(t, nc, bucket, "src-a", a)
+	writeObj(t, nc, bucket, "src-b", b)
+	bkt := rc.Bucket(bucket)
+
+	copier := bkt.Object(rustTestPrefix + "copy").If(Conditions{DoesNotExist: true}).CopierFrom(bkt.Object(rustTestPrefix + "src-a"))
+	copier.ContentType = "application/x-copied"
+	ca, err := copier.Run(ctx)
+	if err != nil {
+		t.Fatalf("rust copy: %v", err)
+	}
+	if ca.Size != int64(len(a)) || ca.ContentType != "application/x-copied" {
+		t.Errorf("copy attrs: %+v", ca)
+	}
+
+	composer := bkt.Object(rustTestPrefix+"composed").ComposerFrom(bkt.Object(rustTestPrefix+"src-a"), bkt.Object(rustTestPrefix+"src-b"))
+	co, err := composer.Run(ctx)
+	if err != nil {
+		t.Fatalf("rust compose: %v", err)
+	}
+	r, err := nc.Bucket(bucket).Object(rustTestPrefix + "composed").NewReader(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := io.ReadAll(r)
+	r.Close()
+	if !bytes.Equal(got, append(append([]byte{}, a...), b...)) || co.Size != int64(len(a)+len(b)) || co.ComponentCount != 2 {
+		t.Errorf("composed object wrong: %d bytes, attrs size=%d components=%d", len(got), co.Size, co.ComponentCount)
+	}
+}
+
+// Bucket metadata and IAM through the core.
+func TestRustCoreBucketAndIAM(t *testing.T) {
+	rc, nc, bucket := rustTestClients(t)
+	ctx := context.Background()
+	ra, err := rc.Bucket(bucket).Attrs(ctx)
+	if err != nil {
+		t.Fatalf("rust bucket Attrs: %v", err)
+	}
+	na, err := nc.Bucket(bucket).Attrs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ra.Name != na.Name || !strings.EqualFold(ra.Location, na.Location) || ra.StorageClass != na.StorageClass ||
+		ra.MetaGeneration != na.MetaGeneration || ra.UniformBucketLevelAccess.Enabled != na.UniformBucketLevelAccess.Enabled {
+		t.Errorf("bucket attrs differ:\n rust   %+v\n native %+v", ra, na)
+	}
+	if _, err := rc.Bucket(bucket + "-does-not-exist-" + strconv.Itoa(int(time.Now().Unix()))).Attrs(ctx); !errors.Is(err, ErrBucketNotExist) {
+		t.Errorf("missing bucket: want ErrBucketNotExist, got %v", err)
+	}
+	p, err := rc.Bucket(bucket).IAM().Policy(ctx)
+	if err != nil {
+		t.Fatalf("rust IAM Policy: %v", err)
+	}
+	t.Logf("IAM policy: %d roles", len(p.Roles()))
+	perms, err := rc.Bucket(bucket).IAM().TestPermissions(ctx, []string{"storage.objects.get", "storage.objects.list"})
+	if err != nil || len(perms) == 0 {
+		t.Errorf("rust TestPermissions = %v, %v", perms, err)
+	}
+}
+
+// ---- Policy hand-off -------------------------------------------------------------------------
+
+// One operation = one crossing: the Go retry loop must not run on top of the core's. A retry
+// predicate (WithErrorFunc) is evaluated by the core through a callback.
+func TestRustCoreRetryHandOff(t *testing.T) {
+	rc, _, bucket := rustTestClients(t)
+	ctx := context.Background()
+	missing := rc.Bucket(bucket).Object(rustTestPrefix + "never-written")
+
+	f0 := rustcore.FFICalls.Load()
+	if _, err := missing.Attrs(ctx); !errors.Is(err, ErrObjectNotExist) {
+		t.Fatalf("Attrs: %v", err)
+	}
+	if d := rustcore.FFICalls.Load() - f0; d != 1 {
+		t.Errorf("Attrs on a missing object made %d FFI calls, want 1", d)
+	}
+
+	// Predicate says "retry everything": the core retries up to the attempt limit, inside one
+	// gcs_call. Delete with a generation is idempotent, so the core may retry it.
+	var calls atomic.Int32
+	o := missing.Generation(1).Retryer(
+		WithErrorFunc(func(err error) bool { calls.Add(1); return errors.Is(err, ErrObjectNotExist) || status.Code(err) == codes.NotFound }),
+		WithMaxAttempts(3),
+		WithBackoff(gaxBackoffForTest()),
+	)
+	f0 = rustcore.FFICalls.Load()
+	err := o.Delete(ctx)
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("Delete: want NotFound, got %v", err)
+	}
+	if d := rustcore.FFICalls.Load() - f0; d != 1 {
+		t.Errorf("Delete with retries made %d FFI calls, want 1 (retries must run in the core)", d)
+	}
+	if c := calls.Load(); c < 2 {
+		t.Errorf("retry predicate evaluated %d times, want >= 2", c)
+	}
+	t.Logf("predicate evaluated %d times inside one core call", calls.Load())
+
+	// Non-idempotent (no generation precondition): the predicate must not be able to force a
+	// retry under the default policy.
+	calls.Store(0)
+	o = missing.Retryer(WithErrorFunc(func(error) bool { calls.Add(1); return true }), WithMaxAttempts(3))
+	o.Delete(ctx)
+	if c := calls.Load(); c != 0 {
+		t.Errorf("non-idempotent Delete consulted the predicate %d times, want 0", c)
+	}
+}
+
+func gaxBackoffForTest() gax.Backoff {
+	return gax.Backoff{Initial: 10 * time.Millisecond, Max: 50 * time.Millisecond, Multiplier: 2}
 }

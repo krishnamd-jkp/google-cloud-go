@@ -19,18 +19,14 @@ import (
 	"net/http"
 )
 
-// addRustEmulatorClient registers the "rust" transport for emulator tests. The client wraps a
-// fresh JSON client: object reads/writes go to the Rust engine, everything else (bucket setup,
-// metadata, ACLs, ...) to the JSON client. No-op unless the engine is compiled in.
+// addRustEmulatorClient registers the "rust" transport for emulator tests: a client served
+// entirely by the Rust core (control plane over the testbench's gRPC port, data path over its
+// JSON port). No-op unless the core is compiled in.
 func addRustEmulatorClient(ctx context.Context, clients map[string]storageClient) error {
-	if !rustDataPathCompiled {
+	if !rustCoreCompiled {
 		return nil
 	}
-	base, err := newHTTPStorageClient(ctx)
-	if err != nil {
-		return err
-	}
-	rc, err := newRustStorageClient(ctx, base, "", nil, nil)
+	rc, err := newRustCoreClient(ctx, "", nil, nil)
 	if err != nil {
 		return err
 	}
@@ -38,15 +34,15 @@ func addRustEmulatorClient(ctx context.Context, clients map[string]storageClient
 	return nil
 }
 
-// newRustRetryTestClient returns a Client whose object reads/writes go through the Rust engine
-// with the testbench retry-test id attached to every request. The engine cannot forward
-// per-call context headers (callctx.SetHeaders), so the id is set client-wide instead.
+// newRustRetryTestClient returns a Client served by the Rust core for retry conformance tests.
+// Metadata RPCs forward the per-call x-retry-test-id header (callctx); the core's data-path
+// builders only accept client-level headers, so the id is also set client-wide.
 func newRustRetryTestClient(ctx context.Context, retryTestID string) (*Client, error) {
 	c, err := NewClient(ctx)
 	if err != nil {
 		return nil, err
 	}
-	rc, err := newRustStorageClient(ctx, c.tc, "", nil, http.Header{"x-retry-test-id": {retryTestID}})
+	rc, err := newRustCoreClient(ctx, "", nil, http.Header{"x-retry-test-id": {retryTestID}})
 	if err != nil {
 		return nil, err
 	}

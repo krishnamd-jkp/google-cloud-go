@@ -47,7 +47,7 @@ func init() {
 	storageinternal.WithOtelDebugMetrics = withOtelDebugMetrics
 	storageinternal.WithBufferPool = withBufferPool
 	storageinternal.WithGRPCKeepalive = withGRPCKeepalive
-	storageinternal.WithRustDataPath = withRustDataPath
+	storageinternal.WithRustCore = withRustCore
 	storageinternal.RustEngineStats = rustEngineStats
 }
 
@@ -98,16 +98,16 @@ type storageConfig struct {
 	grpcDirectPathEnforced bool
 	bufferPool             experimental.BufferPool
 	grpcKeepalive          *experimental.GRPCKeepaliveConfig
-	rustDataPath           bool
+	rustCore               bool
 }
 
-type withRustDataPathConfig struct {
+type withRustCoreConfig struct {
 	internaloption.EmbeddableAdapter
 }
 
-func withRustDataPath() option.ClientOption { return &withRustDataPathConfig{} }
+func withRustCore() option.ClientOption { return &withRustCoreConfig{} }
 
-func (w *withRustDataPathConfig) ApplyStorageOpt(c *storageConfig) { c.rustDataPath = true }
+func (w *withRustCoreConfig) ApplyStorageOpt(c *storageConfig) { c.rustCore = true }
 
 // newStorageConfig generates a new storageConfig with all the given
 // storageClientOptions applied.

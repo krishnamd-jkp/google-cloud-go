@@ -22,16 +22,24 @@ package rustcore
 
 extern void rustcoreDone(uintptr_t user, GcsStatus st, uint64_t n);
 extern int32_t rustcoreToken(uintptr_t user, char **tok, int64_t *exp, char **err);
+extern int32_t rustcoreRetry(uintptr_t predicate, GcsStatus st, uint32_t attempt);
 
 // Thin trampolines: Go cannot take the address of an exported Go function, and doing the
 // integer<->pointer conversions here keeps them out of Go (no unsafe.Pointer(uintptr(x))).
 static GcsStatus rc_client_new(GcsClientConfig *cfg, GcsClient **out, int token_cb) {
 	if (token_cb) cfg->token_cb = rustcoreToken;
+	cfg->retry_cb = rustcoreRetry;
 	return gcs_client_new(cfg, out);
 }
-static int32_t rc_reader_open(const GcsClient *c, const GcsReadParams *p, uintptr_t user,
-                              uint64_t *op, GcsStatus *st) {
-	return gcs_reader_open(c, p, rustcoreDone, user, op, st);
+static int32_t rc_call(const GcsClient *c, const char *method, const uint8_t *req, size_t req_len,
+                       const uint8_t *opts, size_t opts_len, uintptr_t user, uint64_t *op,
+                       GcsStatus *st) {
+	return gcs_call(c, method, req, req_len, opts, opts_len, rustcoreDone, user, op, st);
+}
+static int32_t rc_read_open(const GcsClient *c, const uint8_t *req, size_t req_len,
+                            const uint8_t *opts, size_t opts_len, uintptr_t user, uint64_t *op,
+                            GcsStatus *st) {
+	return gcs_read_open(c, req, req_len, opts, opts_len, rustcoreDone, user, op, st);
 }
 static int32_t rc_reader_read(const GcsReader *r, uint8_t *buf, size_t cap, uintptr_t user,
                               size_t *n, GcsStatus *st) {
@@ -64,8 +72,15 @@ import (
 	"unsafe"
 )
 
-// Available reports whether the Rust engine is compiled into this binary.
+// Package rustcore is the Go binding of the Rust core's C ABI (gcs_core.h). It is generic: it
+// moves bytes (proto3-JSON requests/responses, options JSON, object data) across the boundary
+// and knows nothing about Cloud Storage semantics, so it does not change when the API grows.
+
+// Available reports whether the Rust core is compiled into this binary.
 const Available = true
+
+// ABIVersion is the gcs_core ABI this binding was written against.
+const ABIVersion = 3
 
 // Status codes (mirror GCS_* in gcs_core.h).
 const (
@@ -76,11 +91,12 @@ const (
 	CodeCancelled = 4
 )
 
-// Error is a failure reported by the engine, with enough structure to rebuild the error
-// types the storage package returns (*googleapi.Error, ErrObjectNotExist, ctx errors).
+// Error is a failure reported by the core. Both codes are always filled in when known (the
+// core derives the missing one), so callers can rebuild gRPC- or HTTP-style errors regardless
+// of which transport the core used.
 type Error struct {
 	Code     int // CodeErr, CodePanic, CodeInvalid, CodeCancelled
-	HTTPCode int // HTTP status of the failed request, 0 if none
+	HTTPCode int // HTTP status, 0 if none
 	RPCCode  int // google.rpc.Code, -1 if unknown
 	Message  string
 	Header   http.Header
@@ -88,16 +104,16 @@ type Error struct {
 
 func (e *Error) Error() string {
 	if e.HTTPCode != 0 {
-		return fmt.Sprintf("gcs rust engine: http %d: %s", e.HTTPCode, e.Message)
+		return fmt.Sprintf("gcs rust core: http %d: %s", e.HTTPCode, e.Message)
 	}
-	return "gcs rust engine: " + e.Message
+	return "gcs rust core: " + e.Message
 }
 
-// Counters for benchmarks and tests (crossings into the engine).
+// Counters for benchmarks and tests (crossings into the core).
 var (
 	FFICalls  atomic.Int64 // cgo calls into gcs_core
 	AsyncOps  atomic.Int64 // calls that completed asynchronously (Rust->Go callback)
-	ErrClosed = errors.New("storage: rust engine handle is closed")
+	ErrClosed = errors.New("storage: rust core handle is closed")
 )
 
 func takeStatus(st C.GcsStatus) *Error {
@@ -123,10 +139,10 @@ func takeStatus(st C.GcsStatus) *Error {
 	return e
 }
 
-// cstrings allocates C strings and frees them together.
-type cstrings []unsafe.Pointer
+// cmem allocates C memory and frees it together.
+type cmem []unsafe.Pointer
 
-func (c *cstrings) str(s string) *C.char {
+func (c *cmem) str(s string) *C.char {
 	if s == "" {
 		return nil
 	}
@@ -135,22 +151,36 @@ func (c *cstrings) str(s string) *C.char {
 	return p
 }
 
-func (c *cstrings) bytes(b []byte) *C.uint8_t {
+func (c *cmem) bytes(b []byte) (*C.uint8_t, C.size_t) {
 	if len(b) == 0 {
-		return nil
+		return nil, 0
 	}
 	p := C.CBytes(b)
 	*c = append(*c, p)
-	return (*C.uint8_t)(p)
+	return (*C.uint8_t)(p), C.size_t(len(b))
 }
 
-func (c *cstrings) free() {
+func (c *cmem) free() {
 	for _, p := range *c {
 		C.free(p)
 	}
 }
 
-// ConfigureRuntime sets the engine's worker thread count; must run before the first client.
+// takeCString copies and frees a Rust-owned C string delivered as a completion value.
+func takeCString(n uint64) []byte {
+	cs := C.rc_as_cstr(C.uint64_t(n))
+	if cs == nil {
+		return nil
+	}
+	b := []byte(C.GoString(cs))
+	C.gcs_string_free(cs)
+	return b
+}
+
+// CoreABIVersion reports the ABI version of the linked core.
+func CoreABIVersion() int { return int(C.gcs_abi_version()) }
+
+// ConfigureRuntime sets the core's worker thread count; must run before the first client.
 func ConfigureRuntime(workerThreads int) bool {
 	return C.gcs_runtime_configure(C.uint32_t(workerThreads)) == 1
 }
@@ -183,7 +213,7 @@ func (a *AsyncNoopper) Close() { a.h.Delete() }
 
 // ---- Client ----------------------------------------------------------------------------------
 
-// Auth selects how the engine authenticates.
+// Auth selects how the core authenticates.
 type Auth int
 
 const (
@@ -193,29 +223,33 @@ const (
 	AuthTokenSource
 )
 
-// ClientConfig configures the engine client.
+// ClientConfig configures the core client.
 type ClientConfig struct {
-	Endpoint        string // e.g. https://storage.googleapis.com ; empty = default
+	Endpoint        string // JSON/data path, e.g. https://storage.googleapis.com ; empty = default
+	GRPCEndpoint    string // control plane, e.g. http://localhost:8888 ; empty = default
 	UniverseDomain  string
 	Auth            Auth
 	CredentialsJSON []byte
 	TokenSource     TokenSource // for AuthTokenSource
 	QuotaProject    string
 	UserAgent       string
-	Headers         http.Header // sent on every request
+	Headers         http.Header // sent on every data-path request
 }
 
-// Client is a handle to an engine client. Safe for concurrent use.
+// Client is a handle to a core client. Safe for concurrent use.
 type Client struct {
 	mu     sync.RWMutex
 	p      *C.GcsClient
 	tokenH cgo.Handle
 }
 
-// NewClient creates an engine client.
+// NewClient creates a core client.
 func NewClient(cfg ClientConfig) (*Client, error) {
-	var cs cstrings
-	defer cs.free()
+	if v := CoreABIVersion(); v != ABIVersion {
+		return nil, fmt.Errorf("rustcore: core ABI v%d, binding expects v%d", v, ABIVersion)
+	}
+	var cm cmem
+	defer cm.free()
 	var hdr strings.Builder
 	for k, vs := range cfg.Headers {
 		for _, v := range vs {
@@ -223,12 +257,13 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		}
 	}
 	ccfg := C.GcsClientConfig{
-		endpoint:         cs.str(cfg.Endpoint),
-		universe_domain:  cs.str(cfg.UniverseDomain),
-		credentials_json: cs.str(string(cfg.CredentialsJSON)),
-		quota_project:    cs.str(cfg.QuotaProject),
-		user_agent:       cs.str(cfg.UserAgent),
-		custom_headers:   cs.str(hdr.String()),
+		endpoint:         cm.str(cfg.Endpoint),
+		grpc_endpoint:    cm.str(cfg.GRPCEndpoint),
+		universe_domain:  cm.str(cfg.UniverseDomain),
+		credentials_json: cm.str(string(cfg.CredentialsJSON)),
+		quota_project:    cm.str(cfg.QuotaProject),
+		user_agent:       cm.str(cfg.UserAgent),
+		custom_headers:   cm.str(hdr.String()),
 		auth_mode:        C.int32_t(cfg.Auth),
 	}
 	c := &Client{}
@@ -251,8 +286,8 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	return c, nil
 }
 
-// Close releases the client. Readers/writers that are still open keep working.
-// The token handle is intentionally kept alive (open handles may still refresh tokens).
+// Close releases the client. Calls, readers and writers still in flight keep working.
+// The token handle is intentionally kept alive (in-flight operations may still refresh tokens).
 func (c *Client) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -262,71 +297,60 @@ func (c *Client) Close() {
 	}
 }
 
-// ---- Reader ----------------------------------------------------------------------------------
+// ---- Unary calls -----------------------------------------------------------------------------
 
-// Conds are object preconditions; nil fields are unset.
-type Conds struct {
-	GenerationMatch, GenerationNotMatch, MetagenerationMatch, MetagenerationNotMatch *int64
-}
+// Call runs one unary RPC of google.storage.v2.Storage. req and the result are proto3 JSON;
+// opts is the options JSON (may be nil). If ctx is done first the call is cancelled.
+func (c *Client) Call(ctx context.Context, method string, req, opts []byte) ([]byte, error) {
+	var cm cmem
+	defer cm.free()
+	m := cm.str(method)
+	rp, rl := cm.bytes(req)
+	op, ol := cm.bytes(opts)
 
-func (cd Conds) apply(flags *C.uint32_t, gm, gnm, mm, mnm *C.int64_t) {
-	set := func(v *int64, bit C.uint32_t, dst *C.int64_t) {
-		if v != nil {
-			*flags |= bit
-			*dst = C.int64_t(*v)
+	done := make(chan result, 1)
+	h := cgo.NewHandle(done)
+	defer h.Delete() // safe: we always receive the single completion before returning
+
+	c.mu.RLock()
+	if c.p == nil {
+		c.mu.RUnlock()
+		return nil, ErrClosed
+	}
+	var opID C.uint64_t
+	var st C.GcsStatus
+	FFICalls.Add(1)
+	rc := C.rc_call(c.p, m, rp, rl, op, ol, C.uintptr_t(h), &opID, &st)
+	c.mu.RUnlock()
+	if rc < 0 {
+		return nil, takeStatus(st)
+	}
+	AsyncOps.Add(1)
+	var res result
+	select {
+	case res = <-done:
+	case <-ctx.Done():
+		C.gcs_op_cancel(opID)
+		res = <-done
+		if res.err == nil {
+			takeCString(res.n) // completed anyway: free the response
 		}
+		return nil, ctx.Err()
 	}
-	set(cd.GenerationMatch, C.GCS_COND_GENERATION_MATCH, gm)
-	set(cd.GenerationNotMatch, C.GCS_COND_GENERATION_NOT_MATCH, gnm)
-	set(cd.MetagenerationMatch, C.GCS_COND_METAGENERATION_MATCH, mm)
-	set(cd.MetagenerationNotMatch, C.GCS_COND_METAGENERATION_NOT_MATCH, mnm)
-}
-
-// ReadParams mirror storage's newRangeReaderParams.
-type ReadParams struct {
-	Bucket, Object  string
-	Generation      int64 // < 0 = latest
-	Offset, Length  int64 // NewRangeReader semantics; Length must not be 0
-	Conds           Conds
-	EncryptionKey   []byte
-	ReadCompressed  bool
-	DisableCRCCheck bool
-	PrefetchBytes   int
-	Retry           Retry
-}
-
-// Retry modes (mirror storage.RetryPolicy).
-const (
-	RetryDefault = 0
-	RetryAlways  = 1
-	RetryNever   = 2
-)
-
-// Retry mirrors storage's retryConfig (minus custom predicates, which stay in Go).
-type Retry struct {
-	Mode           int
-	MaxAttempts    int
-	MaxRetryMillis int64
-	BackoffInitMs  int64
-	BackoffMaxMs   int64
-	BackoffMult    float64
-}
-
-func (r Retry) toC() C.GcsRetry {
-	return C.GcsRetry{
-		mode:                  C.int32_t(r.Mode),
-		max_attempts:          C.int32_t(r.MaxAttempts),
-		max_retry_duration_ms: C.int64_t(r.MaxRetryMillis),
-		backoff_initial_ms:    C.int64_t(r.BackoffInitMs),
-		backoff_max_ms:        C.int64_t(r.BackoffMaxMs),
-		backoff_multiplier:    C.double(r.BackoffMult),
+	if res.err != nil {
+		return nil, res.err
 	}
+	return takeCString(res.n), nil
 }
+
+// ---- Reader ----------------------------------------------------------------------------------
 
 // Reader streams an object. Read must not be called concurrently with itself; Close may be
 // called concurrently with Read (the pending Read fails promptly).
 type Reader struct {
-	AttrsJSON string
+	// Metadata is the open-time envelope: {"metadata": <v2 Object>, "readOffset", "remaining",
+	// "decompressed"}.
+	Metadata []byte
 
 	readMu sync.Mutex // serializes Read
 
@@ -339,29 +363,13 @@ type Reader struct {
 	done    chan result
 }
 
-// OpenReader starts a read. If ctx is done first the open is cancelled.
-func (c *Client) OpenReader(ctx context.Context, rp ReadParams) (*Reader, error) {
-	var cs cstrings
-	defer cs.free()
-	params := C.GcsReadParams{
-		bucket:             cs.str(rp.Bucket),
-		object:             cs.str(rp.Object),
-		generation:         C.int64_t(rp.Generation),
-		offset:             C.int64_t(rp.Offset),
-		length:             C.int64_t(rp.Length),
-		encryption_key:     cs.bytes(rp.EncryptionKey),
-		encryption_key_len: C.size_t(len(rp.EncryptionKey)),
-		prefetch_bytes:     C.size_t(max(rp.PrefetchBytes, 0)),
-		retry:              rp.Retry.toC(),
-	}
-	rp.Conds.apply(&params.cond_flags, &params.if_generation_match, &params.if_generation_not_match,
-		&params.if_metageneration_match, &params.if_metageneration_not_match)
-	if rp.ReadCompressed {
-		params.read_compressed = 1
-	}
-	if rp.DisableCRCCheck {
-		params.disable_crc_check = 1
-	}
+// OpenReader starts a read (req: proto3-JSON ReadObjectRequest). If ctx is done first the
+// open is cancelled.
+func (c *Client) OpenReader(ctx context.Context, req, opts []byte) (*Reader, error) {
+	var cm cmem
+	defer cm.free()
+	rp, rl := cm.bytes(req)
+	op, ol := cm.bytes(opts)
 
 	done := make(chan result, 1)
 	h := cgo.NewHandle(done)
@@ -372,10 +380,10 @@ func (c *Client) OpenReader(ctx context.Context, rp ReadParams) (*Reader, error)
 		c.mu.RUnlock()
 		return nil, ErrClosed
 	}
-	var op C.uint64_t
+	var opID C.uint64_t
 	var st C.GcsStatus
 	FFICalls.Add(1)
-	rc := C.rc_reader_open(c.p, &params, C.uintptr_t(h), &op, &st)
+	rc := C.rc_read_open(c.p, rp, rl, op, ol, C.uintptr_t(h), &opID, &st)
 	c.mu.RUnlock()
 	if rc < 0 {
 		return nil, takeStatus(st)
@@ -385,7 +393,7 @@ func (c *Client) OpenReader(ctx context.Context, rp ReadParams) (*Reader, error)
 	select {
 	case res = <-done:
 	case <-ctx.Done():
-		C.gcs_op_cancel(op)
+		C.gcs_op_cancel(opID)
 		res = <-done
 		if res.err == nil {
 			C.gcs_reader_close(C.rc_as_reader(C.uint64_t(res.n)))
@@ -397,7 +405,7 @@ func (c *Client) OpenReader(ctx context.Context, rp ReadParams) (*Reader, error)
 	}
 	r := &Reader{p: C.rc_as_reader(C.uint64_t(res.n)), done: make(chan result, 1)}
 	r.h = cgo.NewHandle(r.done)
-	r.AttrsJSON = C.GoString(C.gcs_reader_attrs_json(r.p))
+	r.Metadata = []byte(C.GoString(C.gcs_reader_metadata(r.p)))
 	runtime.SetFinalizer(r, (*Reader).Close) // backstop for leaked readers
 	return r, nil
 }
@@ -446,7 +454,7 @@ func (r *Reader) Read(ctx context.Context, p []byte) (int, error) {
 		r.cancel()
 		res = <-r.done
 		if res.err != nil || res.n == 0 {
-			res = result{err: &Error{Code: CodeCancelled, RPCCode: -1, Message: ctx.Err().Error()}}
+			res = result{err: &Error{Code: CodeCancelled, RPCCode: 1, HTTPCode: 499, Message: ctx.Err().Error()}}
 		}
 	}
 	r.mu.Lock()
@@ -494,16 +502,6 @@ func (r *Reader) Close() {
 
 // ---- Writer ----------------------------------------------------------------------------------
 
-// WriteParams configure an upload.
-type WriteParams struct {
-	Bucket, Object string
-	AttrsJSON      []byte // see GcsWriteParams.attrs_json
-	Conds          Conds
-	EncryptionKey  []byte
-	ChunkSize      int // > 0
-	Retry          Retry
-}
-
 // Writer uploads an object. Write/Close must not be called concurrently with each other;
 // Abort may be called from any goroutine at any time.
 type Writer struct {
@@ -513,6 +511,7 @@ type Writer struct {
 	p       *C.GcsWriter
 	freed   bool
 	pending bool
+	closing bool // a close is pending: its completion carries the object JSON
 	h       cgo.Handle
 	hFreed  bool
 	done    chan result
@@ -523,28 +522,19 @@ type Writer struct {
 const (
 	coalesceBelow = 16 << 10
 	coalesceCap   = 256 << 10
-	// maxMsg bounds each message handed to the engine. The engine's queue is bounded by message
+	// maxMsg bounds each message handed to the core. The core's queue is bounded by message
 	// count, so splitting large writes bounds Rust-side buffering by *bytes* (queue depth x
-	// maxMsg) instead of growing with len(p). The POC let a single Write(32 MiB) buffer
-	// ~4 x 32 MiB in Rust.
+	// maxMsg) instead of growing with len(p).
 	maxMsg = 1 << 20
 )
 
-// OpenWriter prepares an upload; nothing is sent until data is written or the writer closed.
-func (c *Client) OpenWriter(wp WriteParams) (*Writer, error) {
-	var cs cstrings
-	defer cs.free()
-	params := C.GcsWriteParams{
-		bucket:             cs.str(wp.Bucket),
-		object:             cs.str(wp.Object),
-		attrs_json:         cs.str(string(wp.AttrsJSON)),
-		encryption_key:     cs.bytes(wp.EncryptionKey),
-		encryption_key_len: C.size_t(len(wp.EncryptionKey)),
-		chunk_size:         C.size_t(wp.ChunkSize),
-		retry:              wp.Retry.toC(),
-	}
-	wp.Conds.apply(&params.cond_flags, &params.if_generation_match, &params.if_generation_not_match,
-		&params.if_metageneration_match, &params.if_metageneration_not_match)
+// OpenWriter prepares an upload (req: proto3-JSON StartResumableWriteRequest shape); nothing
+// is sent until data is written or the writer closed.
+func (c *Client) OpenWriter(req, opts []byte) (*Writer, error) {
+	var cm cmem
+	defer cm.free()
+	rp, rl := cm.bytes(req)
+	op, ol := cm.bytes(opts)
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.p == nil {
@@ -553,7 +543,7 @@ func (c *Client) OpenWriter(wp WriteParams) (*Writer, error) {
 	w := &Writer{done: make(chan result, 1)}
 	var st C.GcsStatus
 	FFICalls.Add(1)
-	if C.gcs_writer_open(c.p, &params, &w.p, &st) < 0 {
+	if C.gcs_write_open(c.p, rp, rl, op, ol, &w.p, &st) < 0 {
 		return nil, takeStatus(st)
 	}
 	w.h = cgo.NewHandle(w.done)
@@ -561,7 +551,7 @@ func (c *Client) OpenWriter(wp WriteParams) (*Writer, error) {
 	return w, nil
 }
 
-// Write queues p. Returns once the engine has copied p (backpressure applies).
+// Write queues p. Returns once the core has copied p (backpressure applies).
 func (w *Writer) Write(ctx context.Context, p []byte) (int, error) {
 	w.opMu.Lock()
 	defer w.opMu.Unlock()
@@ -632,7 +622,10 @@ func (w *Writer) wait(ctx context.Context) result {
 	case <-ctx.Done():
 		w.Abort()
 		res = <-w.done
-		res.err = &Error{Code: CodeCancelled, RPCCode: -1, Message: ctx.Err().Error()}
+		if res.err == nil && res.n != 0 && w.closing {
+			takeCString(res.n) // the close completed anyway: free the object JSON
+		}
+		res = result{err: &Error{Code: CodeCancelled, RPCCode: 1, HTTPCode: 499, Message: ctx.Err().Error()}}
 	}
 	w.mu.Lock()
 	w.pending = false
@@ -669,6 +662,7 @@ func (w *Writer) Close(ctx context.Context) ([]byte, error) {
 	rc := C.rc_writer_close(w.p, C.uintptr_t(w.h), &st)
 	if rc == 1 {
 		w.pending = true
+		w.closing = true
 	}
 	w.mu.Unlock()
 	if rc < 0 {
@@ -679,10 +673,7 @@ func (w *Writer) Close(ctx context.Context) ([]byte, error) {
 	if res.err != nil {
 		return nil, res.err
 	}
-	cs := C.rc_as_cstr(C.uint64_t(res.n))
-	js := C.GoString(cs)
-	C.gcs_string_free(cs)
-	return []byte(js), nil
+	return takeCString(res.n), nil
 }
 
 // Abort cancels the upload without finalizing the object. Safe from any goroutine; idempotent.

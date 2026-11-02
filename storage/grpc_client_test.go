@@ -29,6 +29,7 @@ import (
 
 	"cloud.google.com/go/auth"
 	"cloud.google.com/go/storage/experimental"
+	gapic "cloud.google.com/go/storage/internal/apiv2"
 	"cloud.google.com/go/storage/internal/apiv2/storagepb"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -760,7 +761,7 @@ func TestNewGRPCStorageClient_NoGlobalTimeout(t *testing.T) {
 
 	// Verify that all generated streaming CallOptions explicitly contain WithTimeout(0)
 	// to keep payload streams (Reads/Writes) completely timeout-free.
-	opts := client.raw.CallOptions
+	opts := client.raw.(*gapic.Client).CallOptions
 	verifyTimeoutIsZero("ReadObject", opts.ReadObject)
 	verifyTimeoutIsZero("WriteObject", opts.WriteObject)
 	verifyTimeoutIsZero("BidiReadObject", opts.BidiReadObject)

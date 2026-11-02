@@ -191,19 +191,22 @@ type GRPCKeepaliveConfig struct {
 	Timeout time.Duration
 }
 
-// WithRustDataPath provides an [option.ClientOption] that may be passed to
-// [cloud.google.com/go/storage.NewClient]. It routes object reads and writes through the shared
-// Rust GCS engine when the binary was built with `-tags gcsrust` and cgo on a supported
-// platform; everything else (and any request using options the engine cannot honour) keeps
-// using the Go JSON/XML client. Without the build tag this option is a no-op.
+// WithRustCore provides an [option.ClientOption] that may be passed to
+// [cloud.google.com/go/storage.NewClient]. Every operation of the client (metadata RPCs, object
+// reads and writes) is then served by the shared Rust core: transport, auth, retries,
+// idempotency, uploads, checksums and error classification run in Rust, the same code for
+// every language SDK. Requires a binary built with `-tags gcsrust` and cgo on linux/amd64;
+// otherwise NewClient returns an error. Not supported (as with the gRPC client): HMAC keys,
+// Pub/Sub notifications, GetServiceAccount; MultiRangeDownloader and appendable uploads are
+// not wired up yet.
 //
 // PROOF OF CONCEPT: not supported, may be removed at any time.
-func WithRustDataPath() option.ClientOption {
-	return internal.WithRustDataPath.(func() option.ClientOption)()
+func WithRustCore() option.ClientOption {
+	return internal.WithRustCore.(func() option.ClientOption)()
 }
 
-// RustEngineStats reports counters of the Rust data path (engine reads/writes, fallbacks to
-// the Go path, FFI calls, async completions). Empty when the engine is not compiled in.
+// RustEngineStats reports counters of the Rust core (FFI calls, async completions). Empty when
+// the core is not compiled in.
 //
 // PROOF OF CONCEPT: not supported, may be removed at any time.
 func RustEngineStats() map[string]int64 {

@@ -60,9 +60,9 @@ var (
 	// It enables HTTP/2 keepalive pings on the client's gRPC connections.
 	WithGRPCKeepalive any // func(GRPCKeepaliveConfig) option.ClientOption
 
-	// WithRustDataPath is a function which is implemented by the storage package.
-	// It routes object reads/writes through the Rust engine (proof of concept).
-	WithRustDataPath any // func() option.ClientOption
+	// WithRustCore is a function which is implemented by the storage package.
+	// It serves every operation through the shared Rust core (proof of concept).
+	WithRustCore any // func() option.ClientOption
 
 	// RustEngineStats is implemented by the storage package (proof of concept).
 	RustEngineStats any // func() map[string]int64

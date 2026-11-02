@@ -137,6 +137,10 @@ type settings struct {
 	// userProject is the user project that should be billed for the request.
 	userProject string
 
+	// engineRetries is set for clients served by the Rust core (experimental): retries are
+	// executed by the core, so every call's retry configuration is marked for hand-off.
+	engineRetries bool
+
 	metricsContext *metricsContext
 }
 
@@ -166,6 +170,15 @@ func callSettings(defaults *settings, opts ...storageOption) *settings {
 	// place.
 	cs := *defaults
 	resolveOptions(&cs, opts...)
+	if cs.engineRetries {
+		r := defaultRetry
+		if cs.retry != nil {
+			r = cs.retry
+		}
+		marked := *r
+		marked.engine = true
+		cs.retry = &marked
+	}
 	return &cs
 }
 

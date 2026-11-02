@@ -124,7 +124,7 @@ func defaultGRPCOptions() []option.ClientOption {
 // grpcStorageClient is the gRPC API implementation of the transport-agnostic
 // storageClient interface.
 type grpcStorageClient struct {
-	raw            *gapic.Client
+	raw            storageRPC // *gapic.Client, or the Rust core (rust_transport.go)
 	settings       *settings
 	config         *storageConfig
 	readStallMgr   *bucketDelayManager

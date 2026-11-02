@@ -129,6 +129,11 @@ func run(ctx context.Context, call func(ctx context.Context) error, retry *retry
 	if retry == nil {
 		retry = defaultRetry
 	}
+	if retry.engine {
+		// Served by the Rust core (experimental), which owns retries, backoff and idempotency:
+		// make exactly one call and hand it the caller's policy.
+		return call(withEngineCall(ctx, retry, retryCtx))
+	}
 	if (retry.policy == RetryIdempotent && !isIdempotent) || retry.policy == RetryNever {
 		ctxWithHeaders := setInvocationHeaders(ctx, invocationID, attempts)
 		return call(withRetryAttempt(ctxWithHeaders, attempts))

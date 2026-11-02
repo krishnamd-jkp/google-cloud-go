@@ -491,16 +491,18 @@ dependencies = [
 
 [[package]]
 name = "gcs_core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bytes",
  "futures",
  "google-cloud-auth",
  "google-cloud-gax",
+ "google-cloud-iam-v1",
  "google-cloud-storage",
  "google-cloud-wkt",
  "http",
  "rustls",
+ "serde",
  "serde_json",
  "tokio",
 ]

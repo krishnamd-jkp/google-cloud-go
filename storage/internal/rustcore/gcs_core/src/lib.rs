@@ -1,24 +1,40 @@
-//! gcs_core v2 — a C ABI over the `google-cloud-storage` crate, used by the Go SDK's
-//! opt-in Rust *data path* (object reads and writes only; the Go SDK keeps the control plane).
+//! gcs_core v3 — one C ABI over the `google-cloud-storage` crate that serves *every* Cloud
+//! Storage operation for the Go SDK. Nothing in the ABI is Go-specific: it is designed so other
+//! language SDKs can bind to the same core.
 //!
-//! This is a rewrite of the original POC bridge. The contract below is what makes it safe to
-//! embed in a long-running Go process; each rule fixes a concrete defect found in the POC.
+//! The ABI is deliberately generic so that it does not change when the storage API grows:
+//!
+//! * `gcs_call(method, request, options)` serves every unary RPC of `google.storage.v2.Storage`
+//!   (bucket and object metadata, list, compose, rewrite, move, restore, IAM). Requests and
+//!   responses are proto3-JSON encodings of the v2 messages, which every language can produce
+//!   from the protos it already ships.
+//! * `gcs_read_*` / `gcs_writer_*` stream object data (requests: proto3-JSON
+//!   `ReadObjectRequest` / `StartResumableWriteRequest`).
+//! * The options JSON carries only the *caller's* policy knobs (see `options.rs`).
+//!
+//! All storage *logic* runs here, once, for every language: retries and backoff, per-RPC
+//! idempotency rules, resumable vs single-shot uploads, checksums, read resumption,
+//! decompression, credential handling and error classification.
+//!
+//! Safety contract for embedding in a long-running host process (each rule fixes a defect
+//! found in the original POC):
 //!
 //! * **No unwinding into C.** Every exported function runs under `catch_unwind`, including the
 //!   synchronous prologue of async entry points. Background tasks are wrapped too, so a panic
-//!   always becomes an error completion instead of a lost callback (= a goroutine hung forever).
+//!   always becomes an error completion instead of a lost callback (= a caller hung forever).
 //! * **No use-after-free.** Readers and writers are `Arc`-backed. The FFI owns one reference;
 //!   each in-flight operation owns its own clone, so `close/free` racing with an operation can
 //!   never free memory that a task is still using.
 //! * **Exactly-once completions.** Every async operation reports exactly one callback
-//!   `GcsDoneCb(user, status, n)`. `user` is an opaque `uintptr_t` (a `cgo.Handle` on the Go
-//!   side); it is never a pointer, so Go never fabricates an `unsafe.Pointer` from an integer.
-//! * **Pinned Go memory is released at the callback.** Read destinations / write sources
+//!   `GcsDoneCb(user, status, n)`. `user` is an opaque `uintptr_t` (a `cgo.Handle` in Go); it is
+//!   never a pointer, so the host never fabricates a pointer from an integer.
+//! * **Borrowed host memory is released at the callback.** Read destinations / write sources
 //!   handed to an async operation are only touched until that operation's callback fires.
-//! * **Uploads finalize only on an explicit close.** Abort, cancellation, dropping the handle or
-//!   the writer task dying never finalize a partially written object.
-//! * **Errors keep their structure.** HTTP status, `google.rpc.Code`, service message and
-//!   response headers cross the boundary so Go can rebuild `*googleapi.Error`.
+//! * **Uploads finalize only on an explicit close.** Abort, cancellation, dropping the handle
+//!   or the upload task dying never finalize a partially written object.
+//! * **Errors keep their structure.** gRPC code *and* HTTP status (the core fills in whichever
+//!   the transport did not provide), service message and headers cross the boundary, so every
+//!   language can rebuild its idiomatic error types regardless of the transport used.
 
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char, c_void};
@@ -26,17 +42,20 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
-use google_cloud_storage::client::Storage;
+use google_cloud_storage::client::{Storage, StorageControl};
 use tokio::runtime::Runtime;
 use tokio::task::AbortHandle;
 
+mod call;
 mod creds;
+mod options;
+mod policy;
 mod reader;
-mod retry;
 mod writer;
 
+pub use call::*;
+pub use options::GcsRetryCb;
 pub use reader::*;
-pub use retry::{GCS_RETRY_ALWAYS, GCS_RETRY_DEFAULT, GCS_RETRY_NEVER, GcsRetry};
 pub use writer::*;
 
 // ---------------------------------------------------------------------------------------------
@@ -53,9 +72,9 @@ pub const GCS_CANCELLED: i32 = 4;
 #[repr(C)]
 pub struct GcsStatus {
     pub code: i32,
-    /// HTTP status of the failed request, or 0.
+    /// HTTP status of the failure (derived from `rpc_code` for gRPC calls), or 0.
     pub http_code: i32,
-    /// `google.rpc.Code` of the failure, or -1 when unknown.
+    /// `google.rpc.Code` of the failure (derived from `http_code` for HTTP calls), or -1.
     pub rpc_code: i32,
     /// Human readable message (the service message when available). NULL on OK.
     pub message: *mut c_char,
@@ -70,6 +89,46 @@ pub(crate) struct Status {
     pub rpc_code: i32,
     pub message: String,
     pub headers: String,
+}
+
+/// Canonical google.rpc.Code -> HTTP mapping, with Cloud Storage's 412 for preconditions.
+fn http_for_rpc(code: i32) -> i32 {
+    match code {
+        1 => 499,
+        2 | 13 | 15 => 500,
+        3 => 400,
+        4 => 504,
+        5 => 404,
+        6 | 10 => 409,
+        7 => 403,
+        8 => 429,
+        9 => 412,
+        11 => 416,
+        12 => 501,
+        14 => 503,
+        16 => 401,
+        _ => 0,
+    }
+}
+
+fn rpc_for_http(code: i32) -> i32 {
+    match code {
+        304 | 412 => 9,
+        400 => 3,
+        401 => 16,
+        403 => 7,
+        404 => 5,
+        409 => 6,
+        416 => 11,
+        429 => 8,
+        499 => 1,
+        500 => 13,
+        501 => 12,
+        502 | 503 => 14,
+        504 => 4,
+        c if (500..600).contains(&c) => 14,
+        _ => -1,
+    }
 }
 
 impl Status {
@@ -88,6 +147,12 @@ impl Status {
     pub(crate) fn cancelled(message: impl Into<String>) -> Self {
         Self::new(GCS_CANCELLED, message)
     }
+    pub(crate) fn unimplemented(message: impl Into<String>) -> Self {
+        let mut s = Self::new(GCS_INVALID, message);
+        s.rpc_code = 12;
+        s.http_code = 501;
+        s
+    }
     pub(crate) fn from_panic(p: Box<dyn std::any::Any + Send>) -> Self {
         let msg = p
             .downcast_ref::<&str>()
@@ -96,12 +161,18 @@ impl Status {
             .unwrap_or_else(|| "unknown panic".into());
         Self::new(GCS_PANIC, format!("gcs_core: rust panic: {msg}"))
     }
-    /// Keeps the structure the Go side needs to rebuild `*googleapi.Error`.
+    /// Keeps the structure every language needs to rebuild its idiomatic error type.
     pub(crate) fn from_sdk(e: &google_cloud_storage::Error) -> Self {
         let service_msg = e.status().map(|s| s.message.clone()).filter(|m| !m.is_empty());
         let mut s = Self::err(service_msg.unwrap_or_else(|| e.to_string()));
         s.http_code = e.http_status_code().map(i32::from).unwrap_or(0);
         s.rpc_code = e.status().map(|st| st.code as i32).unwrap_or(-1);
+        if s.http_code == 0 && s.rpc_code >= 0 {
+            s.http_code = http_for_rpc(s.rpc_code);
+        }
+        if s.rpc_code < 0 && s.http_code != 0 {
+            s.rpc_code = rpc_for_http(s.http_code);
+        }
         if let Some(h) = e.http_headers() {
             for (k, v) in h {
                 if let Ok(v) = v.to_str() {
@@ -121,7 +192,7 @@ impl Status {
     }
 }
 
-fn to_c(s: String) -> *mut c_char {
+pub(crate) fn to_c(s: String) -> *mut c_char {
     CString::new(s.replace('\0', " ")).map(CString::into_raw).unwrap_or(std::ptr::null_mut())
 }
 
@@ -186,6 +257,7 @@ pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 /// `status.message`/`status.headers` are owned by the callee (free with `gcs_string_free`).
 pub type GcsDoneCb = unsafe extern "C" fn(user: usize, status: GcsStatus, n: u64);
 
+/// Where an async operation reports its single result.
 #[derive(Clone, Copy)]
 pub(crate) struct Completion {
     cb: GcsDoneCb,
@@ -202,14 +274,14 @@ impl Completion {
     }
 }
 
-/// A region of (pinned) Go memory lent to an async operation until its callback fires.
+/// A region of borrowed host memory lent to an async operation until its callback fires.
 #[derive(Clone, Copy)]
 pub(crate) struct GoBuf {
     pub ptr: *mut u8,
     pub len: usize,
 }
-// SAFETY: the Go side pins the memory (runtime.Pinner) and does not touch it until the
-// completion callback for the operation that owns it has fired.
+// SAFETY: the host pins the memory (Go: runtime.Pinner) and does not touch it until the
+// completion for the operation that owns it has fired.
 unsafe impl Send for GoBuf {}
 
 impl GoBuf {
@@ -260,8 +332,14 @@ pub extern "C" fn gcs_runtime_configure(worker_threads: u32) -> i32 {
     applied
 }
 
+/// ABI version, bumped on any incompatible change. Bindings check it at load time.
+#[unsafe(no_mangle)]
+pub extern "C" fn gcs_abi_version() -> u32 {
+    3
+}
+
 // ---------------------------------------------------------------------------------------------
-// Cancellable one-shot operations (open reader). Long-lived handles have their own cancel.
+// Cancellable one-shot operations (calls, reader opens). Long-lived handles have own cancel.
 // ---------------------------------------------------------------------------------------------
 
 static NEXT_OP: AtomicU64 = AtomicU64::new(1);
@@ -314,8 +392,8 @@ pub const GCS_AUTH_ANONYMOUS: i32 = 1;
 pub const GCS_AUTH_JSON: i32 = 2;
 pub const GCS_AUTH_TOKEN_CALLBACK: i32 = 3;
 
-/// Token callback used for `GCS_AUTH_TOKEN_CALLBACK`: lets the Rust engine use *any* Go
-/// credential (option.WithCredentials*, WithTokenSource, impersonation, WIF, ...).
+/// Token callback used for `GCS_AUTH_TOKEN_CALLBACK`: lets the core use *any* host credential
+/// (Go: option.WithCredentials*, WithTokenSource, impersonation, WIF, ...).
 /// Returns 0 on success with `*out_token` (malloc'ed C string, freed by Rust with `free`) and
 /// `*out_expiry_unix` (0 = unknown); non-zero on failure with `*out_err` (malloc'ed or NULL).
 pub type GcsTokenCb =
@@ -323,24 +401,34 @@ pub type GcsTokenCb =
 
 #[repr(C)]
 pub struct GcsClientConfig {
-    /// e.g. "https://storage.googleapis.com" or "http://localhost:9000"; NULL = default.
+    /// JSON API / data path endpoint, e.g. "https://storage.googleapis.com" or
+    /// "http://localhost:9000"; NULL = default.
     pub endpoint: *const c_char,
+    /// gRPC endpoint for the control plane, e.g. "http://localhost:8888"; NULL = default.
+    pub grpc_endpoint: *const c_char,
     pub universe_domain: *const c_char,
     pub credentials_json: *const c_char,
     pub quota_project: *const c_char,
-    /// Prepended to the engine's user agent (e.g. "gcloud-golang/1.70 rust-core").
+    /// Prepended to the core's user agent (e.g. "gcloud-golang/1.70 rust-core").
     pub user_agent: *const c_char,
-    /// Extra headers for every request, as "Name: value\n" lines.
+    /// Extra headers for every data-path request, as "Name: value\n" lines.
     pub custom_headers: *const c_char,
     pub auth_mode: i32,
     pub token_cb: Option<GcsTokenCb>,
     pub token_user: usize,
+    /// Evaluates caller-supplied retry predicates (`options.retry.predicate`); may be NULL.
+    pub retry_cb: Option<GcsRetryCb>,
 }
 
+/// A client: the data-path (`Storage`) and control-plane (`StorageControl`) clients of the Rust
+/// SDK, sharing one credential. Cheap to clone (everything inside is reference counted).
+#[derive(Clone)]
 pub struct GcsClient {
     pub(crate) storage: Storage,
+    pub(crate) control: StorageControl,
     pub(crate) user_agent: Option<String>,
     pub(crate) quota_project: Option<String>,
+    pub(crate) retry_cb: Option<GcsRetryCb>,
 }
 
 pub(crate) unsafe fn opt_str(p: *const c_char) -> Result<Option<String>, Status> {
@@ -378,6 +466,7 @@ pub unsafe extern "C" fn gcs_client_new(cfg: *const GcsClientConfig, out: *mut *
         }
         let cfg = unsafe { &*cfg };
         let endpoint = unsafe { opt_str(cfg.endpoint) }?;
+        let grpc_endpoint = unsafe { opt_str(cfg.grpc_endpoint) }?;
         let universe = unsafe { opt_str(cfg.universe_domain) }?;
         let quota_project = unsafe { opt_str(cfg.quota_project) }?;
         let user_agent = unsafe { opt_str(cfg.user_agent) }?;
@@ -385,45 +474,53 @@ pub unsafe extern "C" fn gcs_client_new(cfg: *const GcsClientConfig, out: *mut *
             Some(h) => parse_headers(&h)?,
             None => Vec::new(),
         };
+        // One credential shared by the data-path and control-plane clients (one token cache).
         let credentials = match cfg.auth_mode {
-            GCS_AUTH_ADC => None,
-            GCS_AUTH_ANONYMOUS => Some(google_cloud_auth::credentials::anonymous::Builder::new().build()),
+            GCS_AUTH_ADC => google_cloud_auth::credentials::Builder::default()
+                .build()
+                .map_err(|e| Status::err(format!("application default credentials: {e}")))?,
+            GCS_AUTH_ANONYMOUS => google_cloud_auth::credentials::anonymous::Builder::new().build(),
             GCS_AUTH_JSON => {
                 let js = unsafe { req_str(cfg.credentials_json, "credentials_json") }?;
-                Some(creds::from_json(&js)?)
+                creds::from_json(&js)?
             }
             GCS_AUTH_TOKEN_CALLBACK => {
                 let cb = cfg.token_cb.ok_or_else(|| Status::invalid("token_cb is required"))?;
-                Some(creds::go_token_credentials(cb, cfg.token_user))
+                creds::go_token_credentials(cb, cfg.token_user)
             }
             m => return Err(Status::invalid(format!("unknown auth_mode {m}"))),
         };
-        let storage = rt()
-            .block_on(async move {
-                let mut b = Storage::builder();
-                if let Some(e) = endpoint {
-                    b = b.with_endpoint(e);
-                }
-                if let Some(u) = universe {
-                    b = b.with_universe_domain(u);
-                }
-                if let Some(c) = credentials {
-                    b = b.with_credentials(c);
-                }
-                for (k, v) in headers {
-                    b = b.with_custom_header(k, v);
-                }
-                b.build().await
-            })
-            .map_err(|e| Status::err(format!("building storage client: {e}")))?;
-        let client = GcsClient { storage, user_agent, quota_project };
+        let (storage, control) = rt().block_on(async move {
+            let mut b = Storage::builder().with_credentials(credentials.clone());
+            if let Some(e) = endpoint {
+                b = b.with_endpoint(e);
+            }
+            if let Some(u) = universe.clone() {
+                b = b.with_universe_domain(u);
+            }
+            for (k, v) in headers {
+                b = b.with_custom_header(k, v);
+            }
+            let storage = b.build().await.map_err(|e| Status::err(format!("building storage client: {e}")))?;
+
+            let mut cb = StorageControl::builder().with_credentials(credentials);
+            if let Some(e) = grpc_endpoint {
+                cb = cb.with_endpoint(e);
+            }
+            if let Some(u) = universe {
+                cb = cb.with_universe_domain(u);
+            }
+            let control = cb.build().await.map_err(|e| Status::err(format!("building control client: {e}")))?;
+            Ok::<_, Status>((storage, control))
+        })?;
+        let client = GcsClient { storage, control, user_agent, quota_project, retry_cb: cfg.retry_cb };
         unsafe { *out = Box::into_raw(Box::new(client)) };
         Ok(())
     })
 }
 
-/// Frees the client. In-flight readers/writers keep working: they hold their own clones of the
-/// underlying (reference-counted) transport.
+/// Frees the client. In-flight calls, readers and writers keep working: they hold their own
+/// clones of the underlying (reference-counted) transports.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn gcs_client_free(c: *mut GcsClient) {
     guard_void(|| {
@@ -433,7 +530,7 @@ pub unsafe extern "C" fn gcs_client_free(c: *mut GcsClient) {
     });
 }
 
-/// Frees memory allocated by the Go side with C.malloc (C.CString) and handed to Rust.
+/// Frees memory allocated by the host with C malloc (e.g. Go's C.CString) and handed to Rust.
 pub(crate) unsafe fn c_free(p: *mut c_char) {
     unsafe extern "C" {
         fn free(p: *mut c_void);
@@ -443,14 +540,14 @@ pub(crate) unsafe fn c_free(p: *mut c_char) {
     }
 }
 
-/// Cheap call used to measure raw Go->Rust crossing cost.
+/// Cheap call used to measure raw host->Rust crossing cost.
 #[unsafe(no_mangle)]
 pub extern "C" fn gcs_noop(x: u64) -> u64 {
     x.wrapping_add(1)
 }
 
 /// Completes immediately from a runtime thread: measures the cost of one asynchronous
-/// completion (task spawn + Rust->Go callback on a foreign thread + goroutine wake-up).
+/// completion (task spawn + Rust->host callback on a foreign thread + wake-up).
 #[unsafe(no_mangle)]
 pub extern "C" fn gcs_async_noop(cb: GcsDoneCb, user: usize) -> i32 {
     let mut rc = -1;

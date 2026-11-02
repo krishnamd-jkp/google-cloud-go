@@ -18,20 +18,20 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"cloud.google.com/go/auth"
 )
 
-// The Rust engine is not compiled into this binary (no `-tags gcsrust`, CGO_ENABLED=0, or an
-// unsupported GOOS/GOARCH). experimental.WithRustDataPath is then a no-op: the pure-Go
-// transports are used, so the same code builds and runs everywhere.
-const rustDataPathCompiled = false
+// The Rust core is not compiled into this binary (no `-tags gcsrust`, CGO_ENABLED=0, or an
+// unsupported GOOS/GOARCH).
+const rustCoreCompiled = false
 
-func newRustStorageClient(_ context.Context, base storageClient, _ string, _ *auth.Credentials, _ http.Header) (storageClient, error) {
-	return base, nil
+var errRustCoreNotCompiled = errors.New("storage: experimental.WithRustCore requires a binary built with -tags gcsrust and cgo on linux/amd64")
+
+func newRustCoreClient(context.Context, string, *auth.Credentials, http.Header, ...storageOption) (storageClient, error) {
+	return nil, errRustCoreNotCompiled
 }
-
-func rustDataPathStats() (reads, writes, readFallbacks, writeFallbacks int64) { return 0, 0, 0, 0 }
 
 func rustEngineStats() map[string]int64 { return map[string]int64{} }

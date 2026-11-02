@@ -1,13 +1,13 @@
 [package]
 name = "gcs_core"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
-description = "C ABI over the google-cloud-storage crate for the Go SDK's opt-in Rust data path (v2 of the POC)."
+description = "Language-neutral C ABI over the google-cloud-storage crate: one Rust core that serves every Cloud Storage operation for the Go SDK."
 license = "Apache-2.0"
 publish = false
 
 [lib]
-# Only the static library is shipped to Go (cgo links it into the user's binary).
+# Linked into Go binaries by cgo (one self-contained binary).
 crate-type = ["staticlib"]
 
 [features]
@@ -21,13 +21,16 @@ crypto-aws-lc = ["google-cloud-storage/default-rustls-provider"]
 [dependencies]
 bytes = "1"
 futures = "0.3"
-# Pin the exact SDK version: the Go module must be version-locked to one Rust engine build.
+# Pin the exact SDK version: every language binding is version-locked to one Rust core build.
 google-cloud-storage = { version = "=1.20.0", default-features = false }
 google-cloud-auth = { version = "1.17", default-features = false }
 google-cloud-gax = { version = "1.15", default-features = false }
+# Request/response types of the IAM RPCs (GetIamPolicy, SetIamPolicy, TestIamPermissions).
+google-cloud-iam-v1 = { version = "=1.13.0", default-features = false }
 google-cloud-wkt = { version = "1.9", default-features = false }
 http = "1"
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "logging"], optional = true }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
 
@@ -37,5 +40,5 @@ lto = "fat"
 codegen-units = 1
 strip = "debuginfo"
 # Keep unwinding so every FFI entry point can turn a panic into an error instead of aborting the
-# Go process. (panic = "abort" would shrink the binary but makes any panic fatal to the host.)
+# host process. (panic = "abort" would shrink the binary but makes any panic fatal to the host.)
 panic = "unwind"
