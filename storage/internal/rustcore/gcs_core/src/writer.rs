@@ -15,6 +15,15 @@
 //!   invoked with an exact size (single-shot) or unknown size (resumable).
 //! * **Full fidelity.** All object attributes, preconditions, CSEK, user-supplied MD5/CRC32C,
 //!   retry policy and backoff are forwarded.
+//!
+//! **Appendable uploads** (zonal buckets, `BidiWriteObject`): the request is then in the shape of
+//! the first `google.storage.v2.BidiWriteObjectRequest`, either `writeObjectSpec` with
+//! `appendable: true` (a new object, created on the first write, flush or close) or
+//! `appendObjectSpec` (take over an unfinalized object; reopened right away so that
+//! `gcs_writer_open_state` can report where to continue). `gcs_writer_flush` persists what was
+//! written so far; `gcs_writer_close` finalizes the object or, without the `finalizeOnClose`
+//! option, leaves it unfinalized. Served by the SDK's `open_appendable_object` /
+//! `reopen_appendable_object`, which also handle redirects, reconnects and the running CRC32C.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -25,7 +34,7 @@ use google_cloud_storage::model;
 use google_cloud_storage::model_ext::KeyAes256;
 use google_cloud_storage::streaming_source::{SizeHint, StreamingSource};
 use serde::Deserialize;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 
 use crate::call::{bytes as ffi_bytes, to_json};
@@ -50,20 +59,75 @@ struct StartWrite {
     common_object_request_params: Option<model::CommonObjectRequestParams>,
     #[serde(rename = "objectChecksums", alias = "object_checksums")]
     object_checksums: Option<model::ObjectChecksums>,
+    /// Appendable uploads: take over this unfinalized object instead of creating one.
+    #[serde(rename = "appendObjectSpec", alias = "append_object_spec")]
+    append_object_spec: Option<AppendSpec>,
+}
+
+/// The fields of `google.storage.v2.AppendObjectSpec` a takeover uses (the SDK's public model
+/// has no such type). proto3 JSON carries int64 values as strings.
+#[derive(Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+struct AppendSpec {
+    bucket: String,
+    object: String,
+    #[serde(deserialize_with = "de_i64")]
+    generation: i64,
+    #[serde(deserialize_with = "de_opt_i64")]
+    if_metageneration_match: Option<i64>,
+    #[serde(deserialize_with = "de_opt_i64")]
+    if_metageneration_not_match: Option<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum JsonI64 {
+    Num(i64),
+    Str(String),
+}
+
+impl JsonI64 {
+    fn get<E: serde::de::Error>(self) -> Result<i64, E> {
+        match self {
+            JsonI64::Num(n) => Ok(n),
+            JsonI64::Str(s) => s.parse().map_err(E::custom),
+        }
+    }
+}
+
+fn de_i64<'de, D: serde::Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
+    JsonI64::deserialize(d)?.get()
+}
+
+fn de_opt_i64<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<i64>, D::Error> {
+    Option::<JsonI64>::deserialize(d)?.map(JsonI64::get).transpose()
 }
 
 enum WMsg {
     Data(Bytes),
+    /// Appendable uploads: persist everything queued before this; reply = persisted size.
+    Flush(oneshot::Sender<Result<i64, Status>>),
     Finish,
 }
 
 type UploadResult = Result<String, Status>;
+
+/// An appendable upload's stream, once open.
+#[derive(Clone, Copy)]
+struct OpenInfo {
+    generation: i64,
+    persisted_size: i64,
+}
+
+type OpenState = Option<Result<OpenInfo, Status>>;
 
 struct WInner {
     tx: Mutex<Option<mpsc::Sender<WMsg>>>,
     upload: Mutex<Option<AbortHandle>>,
     result: watch::Receiver<Option<UploadResult>>,
     accepted: AtomicU64,
+    /// Appendable uploads only: set once the stream is open (or failed to open).
+    opened: Option<watch::Receiver<OpenState>>,
 }
 
 pub struct GcsWriter {
@@ -104,14 +168,17 @@ impl StreamingSource for ChanSource {
             return None;
         }
         let rx = self.rx.as_mut()?;
-        match rx.recv().await {
-            Some(WMsg::Data(b)) => Some(Ok(b)),
-            Some(WMsg::Finish) => {
-                self.finished = true;
-                None
+        loop {
+            match rx.recv().await {
+                Some(WMsg::Data(b)) => return Some(Ok(b)),
+                Some(WMsg::Finish) => {
+                    self.finished = true;
+                    return None;
+                }
+                Some(WMsg::Flush(reply)) => reject_flush(reply),
+                // Sender dropped without Finish: never let the SDK finalize a partial object.
+                None => return Some(Err(std::io::Error::other("upload abandoned before Close; object not finalized"))),
             }
-            // Sender dropped without Finish: never let the SDK finalize a partial object.
-            None => Some(Err(std::io::Error::other("upload abandoned before Close; object not finalized"))),
         }
     }
 
@@ -155,6 +222,7 @@ async fn run_upload(plan: Plan, rx: &mut mpsc::Receiver<WMsg>) -> UploadResult {
                 finished = true;
                 break;
             }
+            Some(WMsg::Flush(reply)) => reject_flush(reply),
             None => return Err(Status::cancelled("upload abandoned before Close; object not finalized")),
         }
     }
@@ -254,13 +322,215 @@ async fn run_upload(plan: Plan, rx: &mut mpsc::Receiver<WMsg>) -> UploadResult {
     to_json(&obj)
 }
 
+/// Replies to a flush on an upload that cannot flush (the host checks first, so this is
+/// defensive).
+fn reject_flush(reply: oneshot::Sender<Result<i64, Status>>) {
+    let _ = reply.send(Err(Status::invalid("Flush is only supported for appendable uploads")));
+}
+
+/// What an appendable upload writes to.
+enum AppendTarget {
+    /// A new appendable object (`writeObjectSpec.appendable`).
+    New(model::WriteObjectSpec),
+    /// An existing unfinalized appendable object (`appendObjectSpec`).
+    Takeover(AppendSpec),
+}
+
+struct AppendPlan {
+    client: GcsClient,
+    target: AppendTarget,
+    finalize_on_close: bool,
+    opts: CallOptions,
+}
+
+async fn append_task(
+    plan: AppendPlan,
+    mut rx: mpsc::Receiver<WMsg>,
+    result_tx: watch::Sender<Option<UploadResult>>,
+    opened_tx: watch::Sender<OpenState>,
+) {
+    let r = run_append(plan, &mut rx, &opened_tx).await;
+    let unopened = opened_tx.borrow().is_none();
+    if unopened {
+        // Failed before the stream opened: wake whoever waits for the open (a takeover).
+        let st = match &r {
+            Err(s) => s.clone(),
+            Ok(_) => Status::err("upload ended before its stream opened"),
+        };
+        let _ = opened_tx.send(Some(Err(st)));
+    }
+    // Ignore send errors: nobody may be waiting any more.
+    let _ = result_tx.send(Some(r));
+}
+
+async fn run_append(plan: AppendPlan, rx: &mut mpsc::Receiver<WMsg>, opened: &watch::Sender<OpenState>) -> UploadResult {
+    let AppendPlan { client, target, finalize_on_close, opts } = plan;
+    // A message that arrived before the stream was open (a new object opens on the first one).
+    let mut pending = None;
+    // Describes the object for an unfinalized close: the SDK then reports only its generation
+    // and persisted size (finalizing returns the full resource).
+    let (mut writer, mut unfinalized) = match target {
+        AppendTarget::Takeover(a) => {
+            let mut b = client.storage.reopen_appendable_object(bucket_name(&a.bucket), a.object.clone(), a.generation);
+            if let Some(v) = a.if_metageneration_match {
+                b = b.set_if_metageneration_match(v);
+            }
+            if let Some(v) = a.if_metageneration_not_match {
+                b = b.set_if_metageneration_not_match(v);
+            }
+            let b = apply_data_opts!(b, &opts, &client);
+            let w = b.send().await.map_err(|e| Status::from_sdk(&e))?;
+            let mut o = model::Object::default();
+            o.bucket = bucket_name(&a.bucket);
+            o.name = a.object;
+            (w, o)
+        }
+        AppendTarget::New(spec) => {
+            let o = spec.resource.unwrap_or_default();
+            let mut b = client.storage.open_appendable_object(bucket_name(&o.bucket), o.name.clone());
+            if !o.content_type.is_empty() {
+                b = b.set_content_type(o.content_type.clone());
+            }
+            if !o.content_encoding.is_empty() {
+                b = b.set_content_encoding(o.content_encoding.clone());
+            }
+            if !o.content_language.is_empty() {
+                b = b.set_content_language(o.content_language.clone());
+            }
+            if !o.content_disposition.is_empty() {
+                b = b.set_content_disposition(o.content_disposition.clone());
+            }
+            if !o.cache_control.is_empty() {
+                b = b.set_cache_control(o.cache_control.clone());
+            }
+            if !o.kms_key.is_empty() {
+                b = b.set_kms_key(o.kms_key.clone());
+            }
+            if !o.metadata.is_empty() {
+                b = b.set_metadata(o.metadata.clone());
+            }
+            if let Some(t) = o.custom_time.clone() {
+                b = b.set_custom_time(t);
+            }
+            if let Some(cx) = o.contexts.clone() {
+                b = b.set_contexts(cx);
+            }
+            if let Some(v) = spec.if_generation_match {
+                b = b.set_if_generation_match(v);
+            }
+            if let Some(v) = spec.if_generation_not_match {
+                b = b.set_if_generation_not_match(v);
+            }
+            if let Some(v) = spec.if_metageneration_match {
+                b = b.set_if_metageneration_match(v);
+            }
+            if let Some(v) = spec.if_metageneration_not_match {
+                b = b.set_if_metageneration_not_match(v);
+            }
+            let b = apply_data_opts!(b, &opts, &client);
+            // Created on the first message: the first data rides on the opening request.
+            let w = match rx.recv().await {
+                Some(WMsg::Data(first)) => b.send_and_append(first).await,
+                Some(m) => {
+                    pending = Some(m);
+                    b.send().await
+                }
+                None => return Err(Status::cancelled("upload abandoned before Close; object not created")),
+            }
+            .map_err(|e| Status::from_sdk(&e))?;
+            let mut u = o;
+            u.bucket = bucket_name(&u.bucket);
+            u.checksums = None; // caller-supplied values, not the object's
+            (w, u)
+        }
+    };
+    let _ = opened.send(Some(Ok(OpenInfo { generation: writer.generation(), persisted_size: writer.persisted_size() })));
+    loop {
+        let msg = match pending.take() {
+            Some(m) => Some(m),
+            None => rx.recv().await,
+        };
+        match msg {
+            Some(WMsg::Data(b)) => writer.append(b).await.map_err(|e| Status::from_sdk(&e))?,
+            Some(WMsg::Flush(reply)) => {
+                let r = writer.flush().await.map_err(|e| Status::from_sdk(&e));
+                let _ = reply.send(r.clone());
+                r?;
+            }
+            Some(WMsg::Finish) => {
+                if finalize_on_close {
+                    let obj = writer.finalize().await.map_err(|e| Status::from_sdk(&e))?;
+                    return to_json(&obj);
+                }
+                unfinalized.generation = writer.generation();
+                unfinalized.size = writer.close().await.map_err(|e| Status::from_sdk(&e))?;
+                return to_json(&unfinalized);
+            }
+            // Dropped without Close (abort): nothing is finalized; flushed bytes stay in the
+            // unfinalized object, as with Go's own gRPC writer.
+            None => return Err(Status::cancelled("upload aborted before Close; object not finalized")),
+        }
+    }
+}
+
+/// Opens an appendable upload (see the module docs).
+fn open_append(client: &GcsClient, sw: StartWrite, opts: CallOptions) -> Result<*mut GcsWriter, Status> {
+    if sw.common_object_request_params.as_ref().is_some_and(|p| !p.encryption_key_bytes.is_empty()) {
+        return Err(Status::unimplemented(
+            "appendable uploads cannot use customer-supplied encryption keys (not supported by the Rust SDK)",
+        ));
+    }
+    let target = match (sw.append_object_spec, sw.write_object_spec) {
+        (Some(a), _) => {
+            if a.bucket.is_empty() || a.object.is_empty() || a.generation <= 0 {
+                return Err(Status::invalid("appendObjectSpec.bucket, object and generation are required"));
+            }
+            AppendTarget::Takeover(a)
+        }
+        (None, Some(spec)) => {
+            let o = spec.resource.as_ref().ok_or_else(|| Status::invalid("writeObjectSpec.resource is required"))?;
+            if o.bucket.is_empty() || o.name.is_empty() {
+                return Err(Status::invalid("resource.bucket and resource.name are required"));
+            }
+            // Attributes the SDK's appendable uploads cannot set: refuse instead of dropping them.
+            let unsupported = [
+                (!o.acl.is_empty(), "ACLs"),
+                (!spec.predefined_acl.is_empty(), "a predefined ACL"),
+                (o.temporary_hold || o.event_based_hold == Some(true), "object holds"),
+                (o.retention.is_some(), "object retention"),
+                (!o.storage_class.is_empty() && !o.storage_class.eq_ignore_ascii_case("RAPID"), "a storage class other than RAPID"),
+            ];
+            if let Some((_, what)) = unsupported.iter().find(|(set, _)| *set) {
+                return Err(Status::unimplemented(format!("appendable uploads cannot set {what} (not supported by the Rust SDK)")));
+            }
+            AppendTarget::New(spec)
+        }
+        (None, None) => return Err(Status::invalid("writeObjectSpec or appendObjectSpec is required")),
+    };
+    let plan = AppendPlan { client: client.clone(), target, finalize_on_close: opts.finalize_on_close, opts };
+    let (tx, rx) = mpsc::channel::<WMsg>(QUEUE_DEPTH);
+    let (result_tx, result_rx) = watch::channel(None);
+    let (opened_tx, opened_rx) = watch::channel(None);
+    let task = rt().spawn(append_task(plan, rx, result_tx, opened_tx));
+    let inner = Arc::new(WInner {
+        tx: Mutex::new(Some(tx)),
+        upload: Mutex::new(Some(task.abort_handle())),
+        result: result_rx,
+        accepted: AtomicU64::new(0),
+        opened: Some(opened_rx),
+    });
+    Ok(Box::into_raw(Box::new(GcsWriter { inner })))
+}
+
 fn open_impl(client: &GcsClient, req: &[u8], mut opts: CallOptions) -> Result<*mut GcsWriter, Status> {
     opts.bind(client);
     let sw: StartWrite = serde_json::from_slice(req).map_err(|e| Status::invalid(format!("StartResumableWriteRequest: {e}")))?;
-    let spec = sw.write_object_spec.ok_or_else(|| Status::invalid("writeObjectSpec is required"))?;
-    if spec.appendable == Some(true) {
-        return Err(Status::unimplemented("appendable uploads are not wired into gcs_core yet"));
+    let appendable =
+        sw.append_object_spec.is_some() || sw.write_object_spec.as_ref().is_some_and(|s| s.appendable == Some(true));
+    if appendable {
+        return open_append(client, sw, opts);
     }
+    let spec = sw.write_object_spec.ok_or_else(|| Status::invalid("writeObjectSpec is required"))?;
     let res = spec.resource.as_ref().ok_or_else(|| Status::invalid("writeObjectSpec.resource is required"))?;
     if res.bucket.is_empty() || res.name.is_empty() {
         return Err(Status::invalid("resource.bucket and resource.name are required"));
@@ -286,11 +556,13 @@ fn open_impl(client: &GcsClient, req: &[u8], mut opts: CallOptions) -> Result<*m
         upload: Mutex::new(Some(task.abort_handle())),
         result: result_rx,
         accepted: AtomicU64::new(0),
+        opened: None,
     });
     Ok(Box::into_raw(Box::new(GcsWriter { inner })))
 }
 
-/// Opens a writer. Nothing is sent until data arrives or the writer is closed.
+/// Opens a writer. Nothing is sent until data arrives or the writer is closed (except for
+/// appendable takeovers, which reopen the object right away).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn gcs_write_open(
     c: *const GcsClient,
@@ -412,6 +684,93 @@ pub unsafe extern "C" fn gcs_writer_close(w: *const GcsWriter, cb: GcsDoneCb, us
         }
         close_impl(unsafe { &*w }, Completion::new(cb, user))
     })
+}
+
+fn flush_impl(w: &GcsWriter, done: Completion) -> Result<i32, Status> {
+    let inner = w.inner.clone();
+    if inner.opened.is_none() {
+        return Err(Status::invalid("Flush is only supported for appendable uploads"));
+    }
+    let tx = match lock(&inner.tx).as_ref() {
+        Some(tx) => tx.clone(),
+        None => return Err(Status::invalid("storage: Writer is closed")),
+    };
+    rt().spawn(async move {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        if tx.send(WMsg::Flush(reply_tx)).await.is_err() {
+            return done.complete(inner.terminal_status().await, 0);
+        }
+        drop(tx);
+        match reply_rx.await {
+            Ok(Ok(n)) => done.complete(Status::ok(), n.max(0) as u64),
+            Ok(Err(s)) => done.complete(s, 0),
+            Err(_) => done.complete(inner.terminal_status().await, 0),
+        }
+    });
+    Ok(1)
+}
+
+/// Appendable uploads: persists everything written so far (opening the stream first if
+/// needed). Always pending (returns 1) or -1; the callback reports `n` = the persisted size.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn gcs_writer_flush(w: *const GcsWriter, cb: GcsDoneCb, user: usize, out_status: *mut GcsStatus) -> i32 {
+    guard_rc(out_status, || {
+        if w.is_null() {
+            return Err(Status::invalid("null argument"));
+        }
+        flush_impl(unsafe { &*w }, Completion::new(cb, user))
+    })
+}
+
+fn open_state_impl(w: &GcsWriter, done: Completion) -> Result<i32, Status> {
+    let Some(mut rx) = w.inner.opened.clone() else {
+        return Err(Status::invalid("not an appendable upload"));
+    };
+    rt().spawn(async move {
+        let r = match rx.wait_for(|v| v.is_some()).await {
+            Ok(v) => (*v).clone().unwrap_or_else(|| Err(Status::err("no open state"))),
+            Err(_) => Err(Status::cancelled("upload aborted")),
+        };
+        match r {
+            Ok(info) => done.complete(Status::ok(), info.persisted_size.max(0) as u64),
+            Err(s) => done.complete(s, 0),
+        }
+    });
+    Ok(1)
+}
+
+/// Appendable uploads: completes once the stream is open, with `n` = the persisted size, i.e.
+/// the offset a takeover continues from (or the error that prevented the open). Always
+/// pending (returns 1) or -1.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn gcs_writer_open_state(
+    w: *const GcsWriter,
+    cb: GcsDoneCb,
+    user: usize,
+    out_status: *mut GcsStatus,
+) -> i32 {
+    guard_rc(out_status, || {
+        if w.is_null() {
+            return Err(Status::invalid("null argument"));
+        }
+        open_state_impl(unsafe { &*w }, Completion::new(cb, user))
+    })
+}
+
+/// Appendable uploads: the object's generation once the stream is open; 0 before (or for
+/// other uploads).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn gcs_writer_generation(w: *const GcsWriter) -> i64 {
+    if w.is_null() {
+        return 0;
+    }
+    let Some(rx) = unsafe { &*w }.inner.opened.as_ref() else {
+        return 0;
+    };
+    match &*rx.borrow() {
+        Some(Ok(info)) => info.generation,
+        _ => 0,
+    }
 }
 
 /// Aborts the upload without finalizing it (cancellation / CloseWithError). Idempotent.

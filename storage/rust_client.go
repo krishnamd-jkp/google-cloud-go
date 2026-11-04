@@ -428,9 +428,6 @@ func (rr *rustReader) WriteTo(w io.Writer) (int64, error) {
 // ---- Writes ----------------------------------------------------------------------------------
 
 func (c *rustStorageClient) OpenWriter(params *openWriterParams, opts ...storageOption) (internalWriter, error) {
-	if params.append {
-		return nil, status.Error(codes.Unimplemented, "storage: appendable uploads are not yet supported with the rust core")
-	}
 	if params.attrs.Retention != nil {
 		// Fail instead of silently writing an object without its retention configuration.
 		return nil, status.Error(codes.Unimplemented, "storage: object retention on upload is not yet supported with the rust core")
@@ -438,15 +435,39 @@ func (c *rustStorageClient) OpenWriter(params *openWriterParams, opts ...storage
 	s := callSettings(c.settings, opts...)
 	chunkSize, idempotent := params.chunkSize, s.idempotent // ChunkSize 0 = unchunked, no retries
 	o := rustOptions{UserProject: s.userProject, ChunkSize: &chunkSize, Idempotent: &idempotent}
+	// Appendable objects (zonal buckets): BidiWriteObject through the SDK's appendable writer,
+	// which sizes its own messages. ObjectHandle.Generation selects a takeover.
+	takeover := params.append && params.appendGen >= 0
+	if params.append {
+		o.ChunkSize, o.FinalizeOnClose = nil, params.finalizeOnClose
+		if takeover && params.setTakeoverOffset == nil {
+			return nil, errors.New("storage: no way to report offset for appendable takeover")
+		}
+	}
 	var release func()
 	o.Retry, release = toRustRetry(s.retry, &RetryContext{InvocationID: uuid.New().String(), Operation: "OpenWriter", Bucket: params.bucket, Object: params.attrs.Name})
-	return &rustInternalWriter{
-		core:      c.core,
-		opts:      o,
-		release:   release,
-		params:    params,
-		needSniff: params.attrs.ContentType == "" && !params.forceEmptyContentType,
-	}, nil
+	iw := &rustInternalWriter{
+		core:       c.core,
+		opts:       o,
+		release:    release,
+		params:     params,
+		appendable: params.append,
+		// A takeover cannot set attributes: the object exists.
+		needSniff: params.attrs.ContentType == "" && !params.forceEmptyContentType && !takeover,
+	}
+	if takeover {
+		// Reopen right away: NewWriterFromAppendableObject waits for the takeover offset.
+		w, err := iw.open()
+		if err != nil {
+			if iw.writer() != nil {
+				iw.writer().Free()
+			}
+			release()
+			return nil, err
+		}
+		go iw.awaitTakeover(w)
+	}
+	return iw, nil
 }
 
 // rustWriteRequest maps the Go Writer configuration to the core's upload request (the shape of
@@ -471,6 +492,25 @@ func rustWriteRequest(params *openWriterParams, contentType string) ([]byte, err
 	return protojson.Marshal(req)
 }
 
+// rustAppendRequest maps an appendable Writer to the first BidiWriteObjectRequest, as Go's gRPC
+// writer sends it: a new appendable object (writeObjectSpec), or a takeover of an unfinalized
+// one (appendObjectSpec) when ObjectHandle.Generation is set.
+func rustAppendRequest(params *openWriterParams, contentType string) ([]byte, error) {
+	attrs := *params.attrs
+	attrs.ContentType = contentType
+	spec := &storagepb.WriteObjectSpec{Resource: attrs.toProtoObject(params.bucket), PredefinedAcl: attrs.PredefinedACL, Appendable: proto.Bool(true)}
+	if err := applyCondsProto("WriteObject", defaultGen, params.conds, spec); err != nil {
+		return nil, err
+	}
+	req := &storagepb.BidiWriteObjectRequest{CommonObjectRequestParams: toProtoCommonObjectRequestParams(params.encryptionKey)}
+	if params.appendGen >= 0 {
+		req.FirstMessage = &storagepb.BidiWriteObjectRequest_AppendObjectSpec{AppendObjectSpec: writeObjectSpecAsAppendObjectSpec(spec, params.appendGen)}
+	} else {
+		req.FirstMessage = &storagepb.BidiWriteObjectRequest_WriteObjectSpec{WriteObjectSpec: spec}
+	}
+	return protojson.Marshal(req)
+}
+
 // rustInternalWriter adapts rustcore.Writer to storage.Writer's internalWriter contract:
 // Write/Close drive the upload, CloseWithError (ctx cancellation) aborts it without
 // finalizing, and donec is closed exactly once when the upload is over.
@@ -485,10 +525,17 @@ type rustInternalWriter struct {
 	sniff     []byte
 	written   int64
 
+	// Appendable uploads (zonal buckets): Flush is supported, progress reports persisted
+	// sizes, and the object is reported (setObj) once its generation is known.
+	appendable   bool
+	objReported  bool
+	sendFinalCRC bool
+	finalCRC32C  uint32
+
 	mu       sync.Mutex
 	w        *rustcore.Writer
 	aborted  bool
-	busy     bool // the owning goroutine is inside Write or Close
+	busy     bool // the owning goroutine is inside Write, Flush or Close
 	doneOnce sync.Once
 }
 
@@ -555,7 +602,11 @@ func (iw *rustInternalWriter) open() (*rustcore.Writer, error) {
 	if iw.needSniff {
 		ct = http.DetectContentType(iw.sniff)
 	}
-	req, err := rustWriteRequest(iw.params, ct)
+	build := rustWriteRequest
+	if iw.appendable {
+		build = rustAppendRequest
+	}
+	req, err := build(iw.params, ct)
 	if err != nil {
 		return nil, err
 	}
@@ -615,9 +666,12 @@ func (iw *rustInternalWriter) Write(p []byte) (int, error) {
 			return 0, iw.fail(err)
 		}
 	}
-	// Progress reports bytes accepted by the core (the JSON path reports bytes sent).
-	iw.written += int64(len(p))
-	iw.params.progress(iw.written)
+	if !iw.appendable {
+		// Progress reports bytes accepted by the core (the JSON path reports bytes sent).
+		// Appendable uploads report persisted sizes instead (Flush, Close), as Go's gRPC writer.
+		iw.written += int64(len(p))
+		iw.params.progress(iw.written)
+	}
 	return len(p), nil
 }
 
@@ -645,6 +699,16 @@ func (iw *rustInternalWriter) Close() error {
 		iw.fail(err)
 		return nil
 	}
+	if iw.appendable {
+		// The core finalizes with the SDK's running CRC32C of every byte written; a caller's
+		// AppendFinalCRC32C is checked against the result (Go's gRPC writer has the service
+		// check it before finalizing).
+		if iw.sendFinalCRC && po.GetFinalizeTime() != nil && po.GetChecksums().GetCrc32C() != iw.finalCRC32C {
+			iw.fail(status.Errorf(codes.DataLoss, "storage: the finalized object's CRC32C is %d, AppendFinalCRC32C is %d", po.GetChecksums().GetCrc32C(), iw.finalCRC32C))
+			return nil
+		}
+		iw.params.progress(po.GetSize())
+	}
 	iw.params.setObj(newObjectFromProto(&po))
 	iw.finish()
 	return nil
@@ -669,11 +733,64 @@ func (iw *rustInternalWriter) CloseWithError(err error) error {
 	return nil
 }
 
+// Flush (appendable uploads) persists everything written so far and returns the persisted
+// size. Before the first write it creates the object with no data, as Go's gRPC writer does.
 func (iw *rustInternalWriter) Flush() (int64, error) {
-	return 0, errors.New("storage: Writer.Flush is not supported with the rust core")
+	if !iw.appendable {
+		return 0, errors.New("storage: Flush not supported unless client uses gRPC and Append is set to true")
+	}
+	if err := iw.begin(); err != nil {
+		return 0, err
+	}
+	defer iw.end()
+	w := iw.writer()
+	if w == nil {
+		var err error
+		if w, err = iw.open(); err != nil { // with the content type sniffed so far
+			return 0, iw.fail(err)
+		}
+	}
+	n, err := w.Flush(iw.params.ctx)
+	if err != nil {
+		return 0, iw.fail(err)
+	}
+	iw.persisted(w, n)
+	return n, nil
 }
 
-func (iw *rustInternalWriter) setAppendFinalCRC32C(bool, uint32) {}
+// persisted records a size the service confirmed for an appendable object. Go's gRPC writer
+// reports the object from its stream's first response; the core reports the generation.
+func (iw *rustInternalWriter) persisted(w *rustcore.Writer, n int64) {
+	if !iw.objReported {
+		iw.params.setObj(&ObjectAttrs{Bucket: iw.params.bucket, Name: iw.params.attrs.Name, Generation: w.Generation(), Size: n})
+		iw.objReported = true
+	}
+	iw.params.setSize(n)
+	iw.params.progress(n)
+}
+
+// awaitTakeover reports the takeover offset (the persisted size) once the core has reopened
+// the unfinalized object, or ends the upload with the error that prevented it.
+func (iw *rustInternalWriter) awaitTakeover(w *rustcore.Writer) {
+	if err := iw.begin(); err != nil {
+		iw.finish()
+		return
+	}
+	// While this goroutine owns the writer, CloseWithError cannot end the upload (close donec),
+	// so NewWriterFromAppendableObject is still waiting for the offset when it is sent.
+	defer iw.end()
+	n, err := w.OpenState(iw.params.ctx)
+	if err != nil {
+		iw.fail(err)
+		return
+	}
+	iw.persisted(w, n)
+	iw.params.setTakeoverOffset(n)
+}
+
+func (iw *rustInternalWriter) setAppendFinalCRC32C(send bool, c uint32) {
+	iw.sendFinalCRC, iw.finalCRC32C = send, c
+}
 
 // ---- Introspection ---------------------------------------------------------------------------
 

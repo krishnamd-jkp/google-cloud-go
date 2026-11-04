@@ -1,0 +1,5 @@
+# The Rust SDK keeps appendable object uploads (Storage::open_appendable_object and
+# reopen_appendable_object, the bidi writes of zonal buckets) behind this cfg. It must reach the
+# google-cloud-storage crate itself, hence a rustflag rather than a Cargo feature.
+[build]
+rustflags = ["--cfg", "google_cloud_unstable_storage_bidi"]

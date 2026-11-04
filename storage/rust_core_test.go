@@ -35,6 +35,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"net/http"
 	"os"
@@ -51,6 +52,7 @@ import (
 	"cloud.google.com/go/storage/experimental"
 	"cloud.google.com/go/storage/internal/rustcore"
 	gax "github.com/googleapis/gax-go/v2"
+	"github.com/googleapis/gax-go/v2/apierror"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
@@ -972,4 +974,193 @@ func TestRustCoreGRPCParity(t *testing.T) {
 			}
 		}
 	}
+}
+
+// grpcCodeOf is the gRPC status code of a client error (codes.OK for nil).
+func grpcCodeOf(err error) codes.Code {
+	var ae *apierror.APIError
+	if errors.As(err, &ae) {
+		return ae.GRPCStatus().Code()
+	}
+	return status.Code(err)
+}
+
+// appendableOutcome is what one client observed in TestRustCoreAppendableWrites.
+type appendableOutcome struct {
+	flushed, closedSize, takeoverOffset, finalSize, emptyFlush int64
+	unfinalizedFinalized, finalized                            bool
+	takeoverFinalizedCode, preconditionCode                    codes.Code
+}
+
+// Appendable writes to a zonal bucket (BidiWriteObject; in the core, the Rust SDK's
+// open_appendable_object / reopen_appendable_object), run with the Rust core and with Go's own
+// gRPC client, both over CloudPath: unfinalized writes with Flush, a takeover with
+// NewWriterFromAppendableObject that finalizes, FinalizeOnClose after an empty Flush, and the
+// errors for taking over a finalized object and for a failed precondition.
+func TestRustCoreAppendableWrites(t *testing.T) {
+	zonal := os.Getenv("RUST_DP_TEST_ZONAL_BUCKET")
+	if zonal == "" {
+		t.Skip("set RUST_DP_TEST_ZONAL_BUCKET (a zonal bucket)")
+	}
+	t.Setenv("GOOGLE_CLOUD_DISABLE_DIRECT_PATH", "true") // CloudPath for both clients
+	ctx := context.Background()
+	rc, err := NewGRPCClient(ctx, experimental.WithRustCore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { rc.Close() })
+	nc, err := NewGRPCClient(ctx, WithGRPCBidiReads()) // bidi reads: unfinalized objects
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { nc.Close() }) // after the objects are deleted (cleanups run last-in first-out)
+	prefix := fmt.Sprintf("rustcore/%d/%s/", time.Now().UnixNano(), t.Name())
+	t.Cleanup(func() {
+		it := nc.Bucket(zonal).Objects(ctx, &Query{Prefix: prefix})
+		for {
+			a, err := it.Next()
+			if err != nil {
+				if err != iterator.Done {
+					t.Logf("cleanup: listing %s: %v", prefix, err)
+				}
+				break
+			}
+			if err := nc.Bucket(zonal).Object(a.Name).Delete(ctx); err != nil {
+				t.Logf("cleanup: deleting %s: %v", a.Name, err)
+			}
+		}
+	})
+	data := randBytes(5<<20 + 77) // several 2 MiB messages
+	readBack := func(t *testing.T, name string) []byte {
+		t.Helper()
+		r, err := nc.Bucket(zonal).Object(name).NewReader(ctx)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		defer r.Close()
+		b, err := io.ReadAll(r)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		return b
+	}
+	write := func(t *testing.T, w *Writer, p []byte) {
+		t.Helper()
+		for off := 0; off < len(p); off += 1 << 20 { // application-sized writes
+			if _, err := w.Write(p[off:min(off+1<<20, len(p))]); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+		}
+	}
+
+	var outcomes [2]appendableOutcome
+	var timings [2][]string
+	for i, c := range []struct {
+		name   string
+		client *Client
+	}{{"rust", rc}, {"native", nc}} {
+		t.Run(c.name, func(t *testing.T) {
+			out := &outcomes[i]
+			last := time.Now()
+			lap := func(step string) { // wall time per step (informational, not a benchmark)
+				timings[i] = append(timings[i], fmt.Sprintf("%s %v", step, time.Since(last).Round(time.Millisecond)))
+				last = time.Now()
+			}
+			obj := c.client.Bucket(zonal).Object(prefix + c.name + "/append")
+
+			// A new appendable object: write, flush, write more, close without finalizing.
+			w := obj.NewWriter(ctx)
+			w.Append = true
+			write(t, w, data[:3<<20])
+			if out.flushed, err = w.Flush(); err != nil {
+				t.Fatalf("Flush: %v", err)
+			}
+			lap("write+flush 3MiB")
+			if a := w.Attrs(); a == nil || a.Generation == 0 {
+				t.Errorf("Attrs after Flush: %+v, want the object's generation", a)
+			}
+			write(t, w, data[3<<20:4<<20])
+			if err := w.Close(); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+			lap("write 1MiB+close")
+			a := w.Attrs()
+			if a == nil || a.Generation == 0 {
+				t.Fatalf("Attrs after Close: %+v", a)
+			}
+			gen := a.Generation
+			out.closedSize, out.unfinalizedFinalized = a.Size, !a.Finalized.IsZero()
+			if got := readBack(t, obj.ObjectName()); !bytes.Equal(got, data[:4<<20]) {
+				t.Errorf("unfinalized object: read %d bytes, want the %d written", len(got), 4<<20)
+			}
+			lap("read back (native)")
+
+			// Take it over where it ends, append the rest and finalize.
+			tw, off, err := obj.Generation(gen).NewWriterFromAppendableObject(ctx, &AppendableWriterOpts{FinalizeOnClose: true})
+			if err != nil {
+				t.Fatalf("NewWriterFromAppendableObject: %v", err)
+			}
+			lap("takeover open")
+			out.takeoverOffset = off
+			write(t, tw, data[off:])
+			if err := tw.Close(); err != nil {
+				t.Fatalf("Close after takeover: %v", err)
+			}
+			lap("write 1MiB+finalize")
+			fa := tw.Attrs()
+			if fa == nil {
+				t.Fatal("no Attrs after finalizing")
+			}
+			out.finalSize, out.finalized = fa.Size, !fa.Finalized.IsZero()
+			if fa.Generation != gen || fa.CRC32C != crc32.Checksum(data, crc32cTable) {
+				t.Errorf("finalized object: generation %d (want %d), CRC32C %d (want %d)", fa.Generation, gen, fa.CRC32C, crc32.Checksum(data, crc32cTable))
+			}
+			if got := readBack(t, obj.ObjectName()); !bytes.Equal(got, data) {
+				t.Errorf("finalized object: read %d bytes, want the %d written", len(got), len(data))
+			}
+			lap("read back (native)")
+
+			// A finalized object cannot be taken over.
+			_, _, err = obj.Generation(gen).NewWriterFromAppendableObject(ctx, nil)
+			if err == nil {
+				t.Error("takeover of a finalized object succeeded")
+			}
+			out.takeoverFinalizedCode = grpcCodeOf(err)
+			lap("takeover of finalized (error)")
+
+			// FinalizeOnClose, after a Flush that creates the object without data.
+			o2 := c.client.Bucket(zonal).Object(prefix + c.name + "/finalize-on-close")
+			w2 := o2.NewWriter(ctx)
+			w2.Append, w2.FinalizeOnClose = true, true
+			if out.emptyFlush, err = w2.Flush(); err != nil {
+				t.Fatalf("empty Flush: %v", err)
+			}
+			lap("empty flush (creates)")
+			write(t, w2, []byte("hello, appendable"))
+			if err := w2.Close(); err != nil {
+				t.Fatalf("Close with FinalizeOnClose: %v", err)
+			}
+			lap("write 17B+finalize")
+			if a := w2.Attrs(); a == nil || a.Size != 17 || a.Finalized.IsZero() {
+				t.Errorf("FinalizeOnClose: Attrs %+v, want a finalized 17-byte object", a)
+			}
+
+			// DoesNotExist on an existing object fails (on Write or Close).
+			w3 := o2.If(Conditions{DoesNotExist: true}).NewWriter(ctx)
+			w3.Append = true
+			_, werr := w3.Write([]byte("x"))
+			cerr := w3.Close()
+			if werr == nil && cerr == nil {
+				t.Error("appendable write with DoesNotExist over an existing object succeeded")
+			}
+			out.preconditionCode = grpcCodeOf(errors.Join(werr, cerr))
+			lap("precondition failure")
+		})
+	}
+	if outcomes[0] != outcomes[1] {
+		t.Errorf("appendable writes differ:\n rust   %+v\n native %+v", outcomes[0], outcomes[1])
+	}
+	t.Logf("outcome (both clients): %+v", outcomes[1])
+	t.Logf("rust steps:   %s", strings.Join(timings[0], ", "))
+	t.Logf("native steps: %s", strings.Join(timings[1], ", "))
 }

@@ -43,7 +43,7 @@ Generic, so it does not change when the storage API grows:
 |---|---|
 | `gcs_call(method, req, opts)` | every unary v2 RPC (17 today): proto3-JSON request -> proto3-JSON response; plus JSON API methods the SDK lacks (`storage.objects.list`): JSON API query -> JSON API resource |
 | `gcs_read_open` / `gcs_reader_*` | proto3-JSON `ReadObjectRequest`; bytes out |
-| `gcs_write_open` / `gcs_writer_*` | `StartResumableWriteRequest`-shaped JSON; bytes in, `Object` out |
+| `gcs_write_open` / `gcs_writer_*` | `StartResumableWriteRequest`-shaped JSON (appendable uploads: the first `BidiWriteObjectRequest`, plus `gcs_writer_flush` / `gcs_writer_open_state`); bytes in, `Object` out |
 | `opts` (JSON) | caller policy only: retry policy/limits/backoff/predicate, userProject, headers, read/write tuning (`grpc` selects BidiReadObject reads) |
 
 FieldMask fields travel as JSON arrays of raw paths (proto3 JSON cannot carry `*` or
@@ -123,14 +123,23 @@ write tests need real GCS.
   planes), `option.WithoutAuthentication`, any Go credential (token callback),
   `option.WithGRPCConnectionPool` (gRPC connections of the data path; default 1 as in Go's gRPC
   client, instead of the Rust SDK's one per CPU).
+* **Appendable uploads (zonal buckets, gRPC client):** `Writer.Append`, `Writer.Flush`,
+  `FinalizeOnClose` and takeovers with `NewWriterFromAppendableObject`, through the SDK's
+  `open_appendable_object` / `reopen_appendable_object` (they need
+  `--cfg google_cloud_unstable_storage_bidi`, set in `gcs_core/.cargo/config.toml`).
+  Verified against Go's own gRPC client by `TestRustCoreAppendableWrites`. Differences: the SDK
+  sizes its own messages (`ChunkSize` is not used); CSEK, ACLs, holds and retention cannot be
+  set on a new appendable object (`Unimplemented`); `AppendFinalCRC32C` is checked against the
+  finalized object (the SDK sends its own running CRC32C); before finalization `Writer.Attrs`
+  has the bucket, name, generation, size and the attributes the object was created with (the
+  SDK does not expose the service's full resource).
 * **Rejected explicitly:** object retention on upload (`Unimplemented`, as in Go's gRPC
   client) until the core's write path is verified with it.
 * **Not supported (same as Go's gRPC client):** HMAC keys, Pub/Sub notifications,
   `GetServiceAccount` (JSON-only APIs, absent from the v2 protos).
-* **Not wired up yet:** `MultiRangeDownloader` (the Rust SDK has `open_object`), appendable
-  uploads (the Rust SDK has `open_appendable_object`), `Writer.Flush`.
+* **Not wired up yet:** `MultiRangeDownloader` (the Rust SDK has `open_object`).
 * **Rust SDK gaps (need upstream changes):** gRPC uploads to standard buckets (only appendable
-  objects in zonal buckets, behind an unstable feature), JSON listing (the control plane is
+  objects in zonal buckets, behind an unstable cfg), JSON listing (the control plane is
   gRPC-only; the core implements `storage.objects.list` itself), per-call headers on
   reads/writes, `CacheControl` / `LastModified` in JSON read metadata (gRPC reads carry the full
   object), `DisableAutoChecksum`, per-attempt upload timeouts

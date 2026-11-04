@@ -54,6 +54,12 @@ static int32_t rc_writer_write(const GcsWriter *w, const uint8_t *d, size_t len,
 static int32_t rc_writer_close(const GcsWriter *w, uintptr_t user, GcsStatus *st) {
 	return gcs_writer_close(w, rustcoreDone, user, st);
 }
+static int32_t rc_writer_flush(const GcsWriter *w, uintptr_t user, GcsStatus *st) {
+	return gcs_writer_flush(w, rustcoreDone, user, st);
+}
+static int32_t rc_writer_open_state(const GcsWriter *w, uintptr_t user, GcsStatus *st) {
+	return gcs_writer_open_state(w, rustcoreDone, user, st);
+}
 static GcsReader *rc_as_reader(uint64_t v) { return (GcsReader *)(uintptr_t)v; }
 static char *rc_as_cstr(uint64_t v) { return (char *)(uintptr_t)v; }
 static int32_t rc_async_noop(uintptr_t user) { return gcs_async_noop(rustcoreDone, user); }
@@ -82,7 +88,7 @@ import (
 const Available = true
 
 // ABIVersion is the gcs_core ABI this binding was written against.
-const ABIVersion = 4
+const ABIVersion = 5
 
 // Status codes (mirror GCS_* in gcs_core.h).
 const (
@@ -686,6 +692,71 @@ func (w *Writer) Close(ctx context.Context) ([]byte, error) {
 		return nil, res.err
 	}
 	return takeCString(res.n), nil
+}
+
+// Flush (appendable uploads) persists everything written so far, opening the upload's stream
+// first if needed, and returns the object's persisted size.
+func (w *Writer) Flush(ctx context.Context) (int64, error) {
+	w.opMu.Lock()
+	defer w.opMu.Unlock()
+	if err := w.flushSmall(ctx); err != nil {
+		return 0, err
+	}
+	res, err := w.async(ctx, func(st *C.GcsStatus) C.int32_t {
+		return C.rc_writer_flush(w.p, C.uintptr_t(w.h), st)
+	})
+	return int64(res.n), err
+}
+
+// OpenState (appendable uploads) waits until the upload's stream is open and returns the
+// persisted size: where a takeover of an unfinalized object continues.
+func (w *Writer) OpenState(ctx context.Context) (int64, error) {
+	w.opMu.Lock()
+	defer w.opMu.Unlock()
+	res, err := w.async(ctx, func(st *C.GcsStatus) C.int32_t {
+		return C.rc_writer_open_state(w.p, C.uintptr_t(w.h), st)
+	})
+	return int64(res.n), err
+}
+
+// Generation (appendable uploads) is the object's generation once the stream is open, else 0.
+func (w *Writer) Generation() int64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.freed {
+		return 0
+	}
+	FFICalls.Add(1)
+	return int64(C.gcs_writer_generation(w.p))
+}
+
+// async runs one asynchronous core call on the writer (its completion carries a number) and
+// waits for it. The caller holds opMu.
+func (w *Writer) async(ctx context.Context, call func(*C.GcsStatus) C.int32_t) (result, error) {
+	w.mu.Lock()
+	if w.freed {
+		w.mu.Unlock()
+		return result{}, ErrClosed
+	}
+	var st C.GcsStatus
+	FFICalls.Add(1)
+	rc := call(&st)
+	if rc == 1 {
+		w.pending = true
+	}
+	w.mu.Unlock()
+	switch {
+	case rc < 0:
+		return result{}, takeStatus(st)
+	case rc == 0:
+		return result{}, errors.New("rustcore: unexpected synchronous completion")
+	}
+	AsyncOps.Add(1)
+	res := w.wait(ctx)
+	if res.err != nil {
+		return result{}, res.err
+	}
+	return res, nil
 }
 
 // Abort cancels the upload without finalizing the object. Safe from any goroutine; idempotent.

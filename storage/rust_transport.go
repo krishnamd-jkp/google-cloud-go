@@ -273,6 +273,8 @@ type rustOptions struct {
 	VerifyCRC32C *bool             `json:"verifyCrc32c,omitempty"`
 	MetadataOnly bool              `json:"metadataOnly,omitempty"`
 	ChunkSize    *int              `json:"chunkSize,omitempty"`
+	// Appendable uploads: finalize on close (else the object stays unfinalized).
+	FinalizeOnClose bool `json:"finalizeOnClose,omitempty"`
 }
 
 type rustRetryOptions struct {

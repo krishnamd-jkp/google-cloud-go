@@ -380,7 +380,7 @@ pub extern "C" fn gcs_runtime_configure(worker_threads: u32) -> i32 {
 /// ABI version, bumped on any incompatible change. Bindings check it at load time.
 #[unsafe(no_mangle)]
 pub extern "C" fn gcs_abi_version() -> u32 {
-    4
+    5
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -103,6 +103,9 @@ pub(crate) struct CallOptions {
     /// Absent = default (16 MiB). 0 = no chunking: minimal buffering and no retries.
     /// N = uploads larger than N bytes are resumable with N-byte chunks.
     pub chunk_size: Option<usize>,
+    /// Appendable uploads: finalize the object on close (default: leave it unfinalized, so it
+    /// can be appended to later).
+    pub finalize_on_close: bool,
     /// Owns the caller's predicate from `bind` on (see `PredicateGuard`).
     #[serde(skip)]
     guard: Option<Arc<PredicateGuard>>,

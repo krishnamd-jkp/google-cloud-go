@@ -1,4 +1,4 @@
-/* C ABI of gcs_core v4 (hand-written; keep in sync with gcs_core/src/*.rs).
+/* C ABI of gcs_core v5 (hand-written; keep in sync with gcs_core/src/*.rs).
  *
  * Used by the Go SDK via cgo. Nothing in it is Go-specific (plain C types, JSON payloads, opaque
  * handles, completion callbacks), so other language SDKs can bind to the same core:
@@ -91,13 +91,20 @@ int32_t gcs_reader_read(const GcsReader *r, uint8_t *buf, size_t cap, GcsDoneCb 
 void gcs_reader_cancel(const GcsReader *r);
 void gcs_reader_close(GcsReader *r);
 
-/* Writes. Close completion n = (char *) proto3-JSON Object; free with gcs_string_free. */
+/* Writes. Close completion n = (char *) proto3-JSON Object; free with gcs_string_free.
+ * Appendable uploads (req = first BidiWriteObjectRequest: writeObjectSpec with appendable=true,
+ * or appendObjectSpec to take over an unfinalized object; opts.finalizeOnClose) also have:
+ * flush (completion n = persisted size), open_state (completes once the stream is open,
+ * n = persisted size = a takeover's offset) and generation (0 until the stream is open). */
 int32_t gcs_write_open(const GcsClient *c, const uint8_t *req, size_t req_len, const uint8_t *opts,
                        size_t opts_len, GcsWriter **out, GcsStatus *out_status);
 int32_t gcs_writer_write(const GcsWriter *w, const uint8_t *data, size_t len, GcsDoneCb cb,
                          uintptr_t user, GcsStatus *out_status);
 uint64_t gcs_writer_accepted(const GcsWriter *w);
 int32_t gcs_writer_close(const GcsWriter *w, GcsDoneCb cb, uintptr_t user, GcsStatus *out_status);
+int32_t gcs_writer_flush(const GcsWriter *w, GcsDoneCb cb, uintptr_t user, GcsStatus *out_status);
+int32_t gcs_writer_open_state(const GcsWriter *w, GcsDoneCb cb, uintptr_t user, GcsStatus *out_status);
+int64_t gcs_writer_generation(const GcsWriter *w);
 void gcs_writer_abort(const GcsWriter *w);
 void gcs_writer_free(GcsWriter *w);
 
