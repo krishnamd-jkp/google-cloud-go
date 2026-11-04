@@ -1124,11 +1124,16 @@ func TestRetryConformance(t *testing.T) {
 						for _, transport := range transports {
 							testName := fmt.Sprintf("%v-%v-%v-%v-%v", transport, retryTest.Id, instructions.Instructions, methodName, i)
 							t.Run(testName, func(t *testing.T) {
-								if (transport == "http" || transport == "rust") && slices.Contains(skippedHTTPMethods, methodName) {
+								if transport == "http" && slices.Contains(skippedHTTPMethods, methodName) {
 									t.Skip("not supported")
 								}
-								if transport == "grpc" && slices.Contains(skippedGRPCMethods, methodName) {
+								// The rust core serves the gRPC client's method set: skip what gRPC
+								// skips, plus appendable uploads (not wired into the core yet).
+								if (transport == "grpc" || transport == "rust") && slices.Contains(skippedGRPCMethods, methodName) {
 									t.Skip("not supported")
+								}
+								if transport == "rust" && methodName == "storage.appendable.upload" {
+									t.Skip("not supported by the rust core yet")
 								}
 
 								// Create the retry subtest

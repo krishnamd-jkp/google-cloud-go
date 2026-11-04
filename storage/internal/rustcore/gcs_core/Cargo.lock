@@ -501,6 +501,8 @@ dependencies = [
  "google-cloud-storage",
  "google-cloud-wkt",
  "http",
+ "libc",
+ "reqwest",
  "rustls",
  "serde",
  "serde_json",

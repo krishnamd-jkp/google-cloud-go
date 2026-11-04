@@ -49,6 +49,10 @@ import (
 	"cloud.google.com/go/auth"
 	"cloud.google.com/go/storage/internal/apiv2/storagepb"
 	"cloud.google.com/go/storage/internal/rustcore"
+	"github.com/google/uuid"
+	"google.golang.org/api/iterator"
+	"google.golang.org/api/option/internaloption"
+	raw "google.golang.org/api/storage/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -60,6 +64,17 @@ const rustCoreCompiled = true
 type rustStorageClient struct {
 	*grpcStorageClient // Go API <-> v2 proto mapping; RPCs served by rustRPC
 	core               *rustcore.Client
+	// grpc selects gRPC (CloudPath) for object reads and listing: NewGRPCClient with
+	// experimental.WithRustCore. Otherwise (NewClient) reads and listing use the JSON API.
+	// Writes use the JSON API either way: the Rust SDK has no gRPC upload for standard buckets.
+	grpc bool
+}
+
+// rustUseGRPC switches a Rust core client to gRPC reads and listing (see rustStorageClient).
+func rustUseGRPC(tc storageClient) {
+	if c, ok := tc.(*rustStorageClient); ok {
+		c.grpc = true
+	}
 }
 
 // tokenSourceFromAuth adapts cloud.google.com/go/auth credentials (whatever the user configured:
@@ -81,6 +96,40 @@ func emulatorURL(host string) string {
 	return strings.TrimSuffix(host, "/")
 }
 
+// rustEndpoints derives the core's endpoints from the resolved JSON endpoint (the default
+// "https://storage.googleapis.com/storage/v1/", a regional, PSC or restricted endpoint, or a
+// proxy with a path prefix): the data path keeps any path prefix, the control plane uses the
+// same scheme and host.
+func rustEndpoints(endpoint string) (jsonEP, grpcEP string, err error) {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return "", "", err
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return "", "", fmt.Errorf("storage: endpoint %q is not an absolute URL", endpoint)
+	}
+	jsonEP = strings.TrimSuffix(strings.TrimSuffix(endpoint, "/"), "/storage/v1")
+	return jsonEP, u.Scheme + "://" + u.Host, nil
+}
+
+func rustWithoutAuthentication(s *settings) bool {
+	res, err := internaloption.NewUnsafeResolver(s.clientOption...)
+	return err == nil && res.ResolvedWithoutAuthentication()
+}
+
+// rustGRPCConnPoolSize is the number of gRPC connections the core opens for the data path: the
+// client's option.WithGRPCConnectionPool, else the Go SDK's default, so that a Rust core client
+// holds as many connections as the Go gRPC client it stands in for (the Rust SDK's own default
+// is one connection per CPU).
+func rustGRPCConnPoolSize(s *settings) int {
+	if res, err := internaloption.NewUnsafeResolver(s.clientOption...); err == nil {
+		if n := res.ResolvedGRPCConnPoolSize(); n > 0 {
+			return n
+		}
+	}
+	return defaultConnPoolSize
+}
+
 // newRustCoreClient returns a storageClient served entirely by the Rust core. endpoint and
 // creds are the JSON endpoint and credentials NewClient resolved from the user's options.
 func newRustCoreClient(ctx context.Context, endpoint string, creds *auth.Credentials, extraHeaders http.Header, opts ...storageOption) (storageClient, error) {
@@ -88,7 +137,8 @@ func newRustCoreClient(ctx context.Context, endpoint string, creds *auth.Credent
 	s.engineRetries = true
 	config := newStorageConfig(s.clientOption...)
 
-	cfg := rustcore.ClientConfig{UserAgent: userAgent + " gccl-rust-core", Headers: extraHeaders}
+	cfg := rustcore.ClientConfig{UserAgent: userAgent + " gccl-rust-core", Headers: extraHeaders,
+		GRPCSubchannels: rustGRPCConnPoolSize(s)}
 	if host := os.Getenv("STORAGE_EMULATOR_HOST"); host != "" {
 		cfg.Endpoint = emulatorURL(host)
 		cfg.GRPCEndpoint = cfg.Endpoint
@@ -97,21 +147,26 @@ func newRustCoreClient(ctx context.Context, endpoint string, creds *auth.Credent
 		}
 		cfg.Auth = rustcore.AuthAnonymous
 	} else {
-		if creds == nil {
-			return nil, errors.New("storage: the rust core needs credentials it can use; custom HTTP clients and transports are not supported")
-		}
-		u, err := url.Parse(endpoint)
+		jsonEP, grpcEP, err := rustEndpoints(endpoint)
 		if err != nil {
 			return nil, err
 		}
-		cfg.Endpoint = u.Scheme + "://" + u.Host
-		cfg.Auth = rustcore.AuthTokenSource
-		cfg.TokenSource = tokenSourceFromAuth{creds}
-		if qp, err := creds.QuotaProjectID(ctx); err == nil {
-			cfg.QuotaProject = qp
-		}
-		if ud, err := creds.UniverseDomain(ctx); err == nil && ud != "" && ud != "googleapis.com" {
-			cfg.UniverseDomain = ud
+		// Both planes follow the configured endpoint (option.WithEndpoint, universe domain).
+		cfg.Endpoint, cfg.GRPCEndpoint = jsonEP, grpcEP
+		switch {
+		case rustWithoutAuthentication(s):
+			cfg.Auth = rustcore.AuthAnonymous
+		case creds == nil:
+			return nil, errors.New("storage: the rust core cannot use this client's credentials; custom HTTP clients, gRPC connections and API keys are not supported")
+		default:
+			cfg.Auth = rustcore.AuthTokenSource
+			cfg.TokenSource = tokenSourceFromAuth{creds}
+			if qp, err := creds.QuotaProjectID(ctx); err == nil {
+				cfg.QuotaProject = qp
+			}
+			if ud, err := creds.UniverseDomain(ctx); err == nil && ud != "" && ud != "googleapis.com" {
+				cfg.UniverseDomain = ud
+			}
 		}
 	}
 	core, err := rustcore.NewClient(cfg)
@@ -130,6 +185,100 @@ func (c *rustStorageClient) Close() error {
 // Storage::open_object + ObjectDescriptor::read_range).
 func (c *rustStorageClient) NewMultiRangeDownloader(context.Context, *newMultiRangeDownloaderParams, ...storageOption) (*MultiRangeDownloader, error) {
 	return nil, status.Error(codes.Unimplemented, "storage: MultiRangeDownloader is not yet supported with the rust core")
+}
+
+// ---- Listing ---------------------------------------------------------------------------------
+
+// rustListObjectsRequest is the core's "storage.objects.list" request: the JSON API query
+// parameters (gcs_core/src/json_api.rs). The response is the JSON API Objects resource.
+type rustListObjectsRequest struct {
+	Bucket                   string `json:"bucket"`
+	Prefix                   string `json:"prefix,omitempty"`
+	Delimiter                string `json:"delimiter,omitempty"`
+	PageToken                string `json:"pageToken,omitempty"`
+	MaxResults               int64  `json:"maxResults,omitempty"`
+	Versions                 bool   `json:"versions,omitempty"`
+	StartOffset              string `json:"startOffset,omitempty"`
+	EndOffset                string `json:"endOffset,omitempty"`
+	IncludeTrailingDelimiter bool   `json:"includeTrailingDelimiter,omitempty"`
+	MatchGlob                string `json:"matchGlob,omitempty"`
+	IncludeFoldersAsPrefixes bool   `json:"includeFoldersAsPrefixes,omitempty"`
+	SoftDeleted              bool   `json:"softDeleted,omitempty"`
+	Projection               string `json:"projection,omitempty"`
+	Fields                   string `json:"fields,omitempty"`
+	Filter                   string `json:"filter,omitempty"`
+}
+
+// rustListRequest maps a Query page to the core's request, as httpStorageClient.ListObjects
+// maps it to the JSON API (default projection: full; field selection: nextPageToken + attrs).
+func rustListRequest(bucket string, q *Query, pageSize int, pageToken string) rustListObjectsRequest {
+	projection := q.Projection
+	if projection == ProjectionDefault {
+		projection = ProjectionFull
+	}
+	req := rustListObjectsRequest{
+		Bucket:                   bucket,
+		Prefix:                   q.Prefix,
+		Delimiter:                q.Delimiter,
+		PageToken:                pageToken,
+		MaxResults:               int64(max(pageSize, 0)),
+		Versions:                 q.Versions,
+		StartOffset:              q.StartOffset,
+		EndOffset:                q.EndOffset,
+		IncludeTrailingDelimiter: q.IncludeTrailingDelimiter,
+		MatchGlob:                q.MatchGlob,
+		IncludeFoldersAsPrefixes: q.IncludeFoldersAsPrefixes,
+		SoftDeleted:              q.SoftDeleted,
+		Projection:               projection.String(),
+		Filter:                   q.Filter,
+	}
+	if selection := q.toFieldSelection(); selection != "" {
+		req.Fields = "nextPageToken," + selection
+	}
+	return req
+}
+
+// ListObjects lists over the JSON API (storage.objects.list, served by the core), or over gRPC
+// (the v2 ListObjects RPC, through grpcStorageClient) for NewGRPCClient. Paging, retries and
+// errors are the core's; Go maps the Query to the request and the JSON resources to
+// ObjectAttrs (newObject, shared with the JSON transport).
+func (c *rustStorageClient) ListObjects(ctx context.Context, bucket string, q *Query, opts ...storageOption) *ObjectIterator {
+	if c.grpc {
+		return c.grpcStorageClient.ListObjects(ctx, bucket, q, opts...)
+	}
+	s := callSettings(c.settings, opts...)
+	it := &ObjectIterator{ctx: ctx}
+	if q != nil {
+		it.query = *q
+	}
+	fetch := func(pageSize int, pageToken string) (token string, err error) {
+		ctx, _ := startSpan(it.ctx, "rustStorageClient.ObjectsListCall", withStorageURI(bucket, ""))
+		defer func() { endSpan(ctx, err) }()
+		req := rustListRequest(bucket, &it.query, pageSize, pageToken)
+		var resp raw.Objects
+		err = run(ctx, func(ctx context.Context) error {
+			out, err := rustJSONCall(ctx, c.core, "storage.objects.list", req, rustOptions{UserProject: s.userProject})
+			if err != nil {
+				return err
+			}
+			return json.Unmarshal(out, &resp)
+		}, s.retry, s.idempotent, withOperation("ListObjects"), withObject(it.query.Prefix), withBucket(bucket))
+		if err != nil {
+			return "", formatBucketError(err)
+		}
+		for _, item := range resp.Items {
+			it.items = append(it.items, newObject(item))
+		}
+		for _, prefix := range resp.Prefixes {
+			it.items = append(it.items, &ObjectAttrs{Prefix: prefix})
+		}
+		return resp.NextPageToken, nil
+	}
+	it.pageInfo, it.nextFunc = iterator.NewPageInfo(
+		fetch,
+		func() int { return len(it.items) },
+		func() interface{} { b := it.items; it.items = nil; return b })
+	return it
 }
 
 // ---- Reads -----------------------------------------------------------------------------------
@@ -152,9 +301,12 @@ func (c *rustStorageClient) NewRangeReader(ctx context.Context, params *newRange
 	if err := applyCondsProto("rustStorageClient.NewRangeReader", params.gen, params.conds, req); err != nil {
 		return nil, err
 	}
-	o := rustOptions{UserProject: s.userProject, Decompress: !params.readCompressed}
+	o := rustOptions{UserProject: s.userProject, Decompress: !params.readCompressed, GRPC: c.grpc}
 	switch {
 	case params.length == 0:
+		// Object metadata only. Over gRPC the core still opens a read stream at the offset (and
+		// closes it after the first response), as the Go SDK's gRPC readers do.
+		req.ReadOffset = params.offset
 		o.MetadataOnly = true
 	case params.length > 0:
 		req.ReadOffset, req.ReadLimit = params.offset, params.length
@@ -165,7 +317,7 @@ func (c *rustStorageClient) NewRangeReader(ctx context.Context, params *newRange
 		o.VerifyCRC32C = proto.Bool(false)
 	}
 	var release func()
-	o.Retry, release = toRustRetry(s.retry, &RetryContext{Operation: "NewRangeReader", Bucket: params.bucket, Object: params.object})
+	o.Retry, release = toRustRetry(s.retry, &RetryContext{InvocationID: uuid.New().String(), Operation: "NewRangeReader", Bucket: params.bucket, Object: params.object})
 	in, err := protojson.Marshal(req)
 	if err != nil {
 		release()
@@ -206,8 +358,8 @@ func (c *rustStorageClient) NewRangeReader(ctx context.Context, params *newRange
 		attrs.LastModified = obj.GetUpdateTime().AsTime()
 	}
 	md := obj.GetMetadata()
-	if md == nil {
-		md = map[string]string{}
+	if md == nil && !c.grpc {
+		md = map[string]string{} // as the native transports: JSON always returns a map, gRPC nil when empty
 	}
 	return &Reader{
 		Attrs:          attrs,
@@ -242,16 +394,52 @@ func (rr *rustReader) Close() error {
 	return nil
 }
 
+// rustCopyBufs backs rustReader.WriteTo.
+var rustCopyBufs = sync.Pool{New: func() any { b := make([]byte, 1<<20); return &b }}
+
+// WriteTo serves io.Copy (Reader.WriteTo) with 1 MiB reads: io.Copy's own 32 KiB buffer (8 KiB
+// for io.Discard) would cost one FFI crossing per small chunk.
+func (rr *rustReader) WriteTo(w io.Writer) (int64, error) {
+	bp := rustCopyBufs.Get().(*[]byte)
+	defer rustCopyBufs.Put(bp)
+	buf := *bp
+	var total int64
+	for {
+		n, err := rr.Read(buf)
+		if n > 0 {
+			m, werr := w.Write(buf[:n])
+			total += int64(m)
+			if werr != nil {
+				return total, werr
+			}
+			if m != n {
+				return total, io.ErrShortWrite
+			}
+		}
+		if err == io.EOF {
+			return total, nil
+		}
+		if err != nil {
+			return total, err
+		}
+	}
+}
+
 // ---- Writes ----------------------------------------------------------------------------------
 
 func (c *rustStorageClient) OpenWriter(params *openWriterParams, opts ...storageOption) (internalWriter, error) {
 	if params.append {
 		return nil, status.Error(codes.Unimplemented, "storage: appendable uploads are not yet supported with the rust core")
 	}
+	if params.attrs.Retention != nil {
+		// Fail instead of silently writing an object without its retention configuration.
+		return nil, status.Error(codes.Unimplemented, "storage: object retention on upload is not yet supported with the rust core")
+	}
 	s := callSettings(c.settings, opts...)
-	o := rustOptions{UserProject: s.userProject, ChunkSize: params.chunkSize}
+	chunkSize, idempotent := params.chunkSize, s.idempotent // ChunkSize 0 = unchunked, no retries
+	o := rustOptions{UserProject: s.userProject, ChunkSize: &chunkSize, Idempotent: &idempotent}
 	var release func()
-	o.Retry, release = toRustRetry(s.retry, &RetryContext{Operation: "OpenWriter", Bucket: params.bucket, Object: params.attrs.Name})
+	o.Retry, release = toRustRetry(s.retry, &RetryContext{InvocationID: uuid.New().String(), Operation: "OpenWriter", Bucket: params.bucket, Object: params.attrs.Name})
 	return &rustInternalWriter{
 		core:      c.core,
 		opts:      o,
@@ -266,7 +454,7 @@ func (c *rustStorageClient) OpenWriter(params *openWriterParams, opts ...storage
 func rustWriteRequest(params *openWriterParams, contentType string) ([]byte, error) {
 	attrs := *params.attrs
 	attrs.ContentType = contentType
-	spec := &storagepb.WriteObjectSpec{Resource: attrs.toProtoObject(params.bucket)}
+	spec := &storagepb.WriteObjectSpec{Resource: attrs.toProtoObject(params.bucket), PredefinedAcl: attrs.PredefinedACL}
 	if err := applyCondsProto("WriteObject", defaultGen, params.conds, spec); err != nil {
 		return nil, err
 	}
@@ -300,10 +488,37 @@ type rustInternalWriter struct {
 	mu       sync.Mutex
 	w        *rustcore.Writer
 	aborted  bool
+	busy     bool // the owning goroutine is inside Write or Close
 	doneOnce sync.Once
 }
 
 const sniffLen = 512
+
+// begin marks the owner (Write/Close) as active; it fails once the upload was aborted.
+// CloseWithError runs on another goroutine and must never free the upload under an active
+// owner: when it finds the owner busy, the owner finishes the writer in end().
+func (iw *rustInternalWriter) begin() error {
+	iw.mu.Lock()
+	defer iw.mu.Unlock()
+	if iw.aborted {
+		if err := iw.params.ctx.Err(); err != nil {
+			return err
+		}
+		return errors.New("storage: writer was aborted")
+	}
+	iw.busy = true
+	return nil
+}
+
+func (iw *rustInternalWriter) end() {
+	iw.mu.Lock()
+	iw.busy = false
+	aborted := iw.aborted
+	iw.mu.Unlock()
+	if aborted {
+		iw.finish()
+	}
+}
 
 func (iw *rustInternalWriter) finish() {
 	iw.doneOnce.Do(func() {
@@ -375,6 +590,10 @@ func (iw *rustInternalWriter) writer() *rustcore.Writer {
 }
 
 func (iw *rustInternalWriter) Write(p []byte) (int, error) {
+	if err := iw.begin(); err != nil {
+		return 0, err
+	}
+	defer iw.end()
 	w := iw.writer()
 	consumed := 0
 	if w == nil {
@@ -403,6 +622,11 @@ func (iw *rustInternalWriter) Write(p []byte) (int, error) {
 }
 
 func (iw *rustInternalWriter) Close() error {
+	if err := iw.begin(); err != nil {
+		iw.finish() // aborted earlier; the abort reason is already recorded
+		return nil
+	}
+	defer iw.end()
 	w := iw.writer()
 	if w == nil {
 		var err error
@@ -427,17 +651,21 @@ func (iw *rustInternalWriter) Close() error {
 }
 
 // CloseWithError aborts the upload (never finalizing it). Called by storage.Writer when its
-// context is done; must not block.
+// context is done; must not block. The upload's resources are released here only if no
+// Write/Close is in flight; otherwise that call releases them when it returns.
 func (iw *rustInternalWriter) CloseWithError(err error) error {
 	iw.mu.Lock()
 	iw.aborted = true
 	w := iw.w
+	idle := !iw.busy
 	iw.mu.Unlock()
 	if w != nil {
 		w.Abort() // a pending Write/Close returns promptly with an error
 	}
 	iw.params.setError(err)
-	iw.finish()
+	if idle {
+		iw.finish()
+	}
 	return nil
 }
 

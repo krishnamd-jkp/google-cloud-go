@@ -650,6 +650,9 @@ func (c *grpcStorageClient) LockBucketRetentionPolicy(ctx context.Context, bucke
 	if err := applyBucketCondsProto("grpcStorageClient.LockBucketRetentionPolicy", conds, req); err != nil {
 		return err
 	}
+	if s.userProject != "" {
+		ctx = setUserProjectMetadata(ctx, s.userProject)
+	}
 
 	return run(ctx, func(ctx context.Context) error {
 		_, err := c.raw.LockBucketRetentionPolicy(ctx, req, s.gax...)
@@ -1601,8 +1604,10 @@ func rangeReaderRemain(size, startOffset, length int64) int64 {
 // IAM methods.
 
 func (c *grpcStorageClient) GetIamPolicy(ctx context.Context, resource string, version int32, opts ...storageOption) (*iampb.Policy, error) {
-	// TODO: Need a way to set UserProject, potentially in X-Goog-User-Project system parameter.
 	s := callSettings(c.settings, opts...)
+	if s.userProject != "" {
+		ctx = setUserProjectMetadata(ctx, s.userProject)
+	}
 	req := &iampb.GetIamPolicyRequest{
 		Resource: bucketResourceName(globalProjectAlias, resource),
 		Options: &iampb.GetPolicyOptions{
@@ -1620,8 +1625,10 @@ func (c *grpcStorageClient) GetIamPolicy(ctx context.Context, resource string, v
 }
 
 func (c *grpcStorageClient) SetIamPolicy(ctx context.Context, resource string, policy *iampb.Policy, opts ...storageOption) error {
-	// TODO: Need a way to set UserProject, potentially in X-Goog-User-Project system parameter.
 	s := callSettings(c.settings, opts...)
+	if s.userProject != "" {
+		ctx = setUserProjectMetadata(ctx, s.userProject)
+	}
 
 	req := &iampb.SetIamPolicyRequest{
 		Resource: bucketResourceName(globalProjectAlias, resource),
@@ -1635,8 +1642,10 @@ func (c *grpcStorageClient) SetIamPolicy(ctx context.Context, resource string, p
 }
 
 func (c *grpcStorageClient) TestIamPermissions(ctx context.Context, resource string, permissions []string, opts ...storageOption) ([]string, error) {
-	// TODO: Need a way to set UserProject, potentially in X-Goog-User-Project system parameter.
 	s := callSettings(c.settings, opts...)
+	if s.userProject != "" {
+		ctx = setUserProjectMetadata(ctx, s.userProject)
+	}
 	req := &iampb.TestIamPermissionsRequest{
 		Resource:    bucketResourceName(globalProjectAlias, resource),
 		Permissions: permissions,

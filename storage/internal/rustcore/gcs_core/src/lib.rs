@@ -48,6 +48,7 @@ use tokio::task::AbortHandle;
 
 mod call;
 mod creds;
+mod json_api;
 mod options;
 mod policy;
 mod reader;
@@ -92,7 +93,7 @@ pub(crate) struct Status {
 }
 
 /// Canonical google.rpc.Code -> HTTP mapping, with Cloud Storage's 412 for preconditions.
-fn http_for_rpc(code: i32) -> i32 {
+pub(crate) fn http_for_rpc(code: i32) -> i32 {
     match code {
         1 => 499,
         2 | 13 | 15 => 500,
@@ -111,7 +112,7 @@ fn http_for_rpc(code: i32) -> i32 {
     }
 }
 
-fn rpc_for_http(code: i32) -> i32 {
+pub(crate) fn rpc_for_http(code: i32) -> i32 {
     match code {
         304 | 412 => 9,
         400 => 3,
@@ -163,17 +164,43 @@ impl Status {
     }
     /// Keeps the structure every language needs to rebuild its idiomatic error type.
     pub(crate) fn from_sdk(e: &google_cloud_storage::Error) -> Self {
-        let service_msg = e.status().map(|s| s.message.clone()).filter(|m| !m.is_empty());
+        // Retry exhaustion (and some wrappers) carry the codes on a nested error: report the
+        // codes of the error that actually failed.
+        let mut inner = e;
+        let mut cur: Option<&(dyn std::error::Error + 'static)> = std::error::Error::source(e);
+        while inner.status().is_none() && inner.http_status_code().is_none() {
+            let Some(c) = cur else { break };
+            if let Some(x) = c.downcast_ref::<google_cloud_storage::Error>() {
+                inner = x;
+            }
+            cur = c.source();
+        }
+        let service_msg = inner.status().map(|s| s.message.clone()).filter(|m| !m.is_empty());
         let mut s = Self::err(service_msg.unwrap_or_else(|| e.to_string()));
-        s.http_code = e.http_status_code().map(i32::from).unwrap_or(0);
-        s.rpc_code = e.status().map(|st| st.code as i32).unwrap_or(-1);
+        s.http_code = inner.http_status_code().map(i32::from).unwrap_or(0);
+        s.rpc_code = inner.status().map(|st| st.code as i32).unwrap_or(-1);
+        if s.rpc_code < 0 && s.http_code == 0 {
+            // Failures without a service response still get a code, so callers (and retry
+            // predicates) can classify them like the other transports do.
+            if e.to_string().contains("checksum mismatch") {
+                s.rpc_code = 15; // DATA_LOSS
+            } else if e.is_timeout() {
+                s.rpc_code = 4; // DEADLINE_EXCEEDED
+            } else if e.is_io() || e.is_transport() {
+                s.rpc_code = 14; // UNAVAILABLE
+            }
+        }
         if s.http_code == 0 && s.rpc_code >= 0 {
             s.http_code = http_for_rpc(s.rpc_code);
         }
-        if s.rpc_code < 0 && s.http_code != 0 {
-            s.rpc_code = rpc_for_http(s.http_code);
+        // JSON API errors often carry no gRPC code (UNKNOWN): the HTTP status is more specific.
+        if (s.rpc_code < 0 || s.rpc_code == 2) && s.http_code != 0 {
+            let derived = rpc_for_http(s.http_code);
+            if derived >= 0 {
+                s.rpc_code = derived;
+            }
         }
-        if let Some(h) = e.http_headers() {
+        if let Some(h) = inner.http_headers() {
             for (k, v) in h {
                 if let Ok(v) = v.to_str() {
                     s.headers.push_str(k.as_str());
@@ -307,11 +334,29 @@ fn install_crypto_provider() {
     }
 }
 
+/// Rust binaries ignore SIGPIPE from `main`; a static library linked into another runtime does
+/// not get that. TLS and HTTP/1 writes use `writev`, which (unlike `send(MSG_NOSIGNAL)`) raises
+/// SIGPIPE when the peer reset the connection, and a SIGPIPE on a thread the host runtime does
+/// not own is fatal in Go hosts (the Go runtime applies the default action: the process exits).
+/// Blocking it on every core thread turns it into an EPIPE error, handled like any I/O error,
+/// without changing the host's process-wide signal disposition.
+fn block_sigpipe() {
+    #[cfg(unix)]
+    // SAFETY: plain libc calls on a local, zero-initialized signal set; affects this thread only.
+    unsafe {
+        let mut set: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut set);
+        libc::sigaddset(&mut set, libc::SIGPIPE);
+        libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
+    }
+}
+
 pub(crate) fn rt() -> &'static Runtime {
     RT.get_or_init(|| {
         install_crypto_provider();
         let mut b = tokio::runtime::Builder::new_multi_thread();
-        b.enable_all().thread_name("gcs-core");
+        // All network I/O of the core runs on these threads (workers and blocking pool).
+        b.enable_all().thread_name("gcs-core").on_thread_start(block_sigpipe);
         let n = RT_WORKERS.load(Ordering::SeqCst);
         if n > 0 {
             b.worker_threads(n);
@@ -335,7 +380,7 @@ pub extern "C" fn gcs_runtime_configure(worker_threads: u32) -> i32 {
 /// ABI version, bumped on any incompatible change. Bindings check it at load time.
 #[unsafe(no_mangle)]
 pub extern "C" fn gcs_abi_version() -> u32 {
-    3
+    4
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -399,6 +444,10 @@ pub const GCS_AUTH_TOKEN_CALLBACK: i32 = 3;
 pub type GcsTokenCb =
     unsafe extern "C" fn(user: usize, out_token: *mut *mut c_char, out_expiry_unix: *mut i64, out_err: *mut *mut c_char) -> i32;
 
+/// Called exactly once when the core drops its last reference to a host value it was handed
+/// (the token source in `token_user`, a retry predicate id). The host frees the value then.
+pub type GcsReleaseCb = unsafe extern "C" fn(user: usize);
+
 #[repr(C)]
 pub struct GcsClientConfig {
     /// JSON API / data path endpoint, e.g. "https://storage.googleapis.com" or
@@ -418,6 +467,11 @@ pub struct GcsClientConfig {
     pub token_user: usize,
     /// Evaluates caller-supplied retry predicates (`options.retry.predicate`); may be NULL.
     pub retry_cb: Option<GcsRetryCb>,
+    /// Releases host values (token source, predicates) after the core's last use; may be NULL.
+    pub release_cb: Option<GcsReleaseCb>,
+    /// gRPC connections of the data path (`Storage` subchannels); 0 = the SDK default (one per
+    /// CPU). Hosts pass their own connection pool size (Go: WithGRPCConnectionPool, default 1).
+    pub grpc_subchannels: u32,
 }
 
 /// A client: the data-path (`Storage`) and control-plane (`StorageControl`) clients of the Rust
@@ -429,6 +483,12 @@ pub struct GcsClient {
     pub(crate) user_agent: Option<String>,
     pub(crate) quota_project: Option<String>,
     pub(crate) retry_cb: Option<GcsRetryCb>,
+    pub(crate) release_cb: Option<GcsReleaseCb>,
+    /// For JSON API calls the SDK does not offer (json_api.rs): same credential, endpoint and
+    /// default headers as the data path.
+    pub(crate) credentials: google_cloud_auth::credentials::Credentials,
+    pub(crate) http: reqwest::Client,
+    pub(crate) json_endpoint: String,
 }
 
 pub(crate) unsafe fn opt_str(p: *const c_char) -> Result<Option<String>, Status> {
@@ -486,12 +546,30 @@ pub unsafe extern "C" fn gcs_client_new(cfg: *const GcsClientConfig, out: *mut *
             }
             GCS_AUTH_TOKEN_CALLBACK => {
                 let cb = cfg.token_cb.ok_or_else(|| Status::invalid("token_cb is required"))?;
-                creds::go_token_credentials(cb, cfg.token_user)
+                creds::go_token_credentials(cb, cfg.token_user, cfg.release_cb)
             }
             m => return Err(Status::invalid(format!("unknown auth_mode {m}"))),
         };
-        let (storage, control) = rt().block_on(async move {
+        // JSON API calls made by the core itself (json_api.rs) use the same credential,
+        // endpoint and client-level headers as the SDK's data path.
+        let json_credentials = credentials.clone();
+        let subchannels = cfg.grpc_subchannels as usize;
+        let json_endpoint = match (&endpoint, &universe) {
+            (Some(e), _) => e.trim_end_matches('/').to_string(),
+            (None, Some(u)) => format!("https://storage.{u}"),
+            (None, None) => "https://storage.googleapis.com".to_string(),
+        };
+        let build = async move {
+            // Built on the runtime, i.e. after `rt()` installed the rustls crypto provider (the
+            // dependency graph enables reqwest's `rustls-no-provider`).
+            let http = reqwest::Client::builder()
+                .default_headers(headers.iter().cloned().collect())
+                .build()
+                .map_err(|e| Status::err(format!("building http client: {e}")))?;
             let mut b = Storage::builder().with_credentials(credentials.clone());
+            if subchannels > 0 {
+                b = b.with_grpc_subchannel_count(subchannels);
+            }
             if let Some(e) = endpoint {
                 b = b.with_endpoint(e);
             }
@@ -511,9 +589,31 @@ pub unsafe extern "C" fn gcs_client_new(cfg: *const GcsClientConfig, out: *mut *
                 cb = cb.with_universe_domain(u);
             }
             let control = cb.build().await.map_err(|e| Status::err(format!("building control client: {e}")))?;
-            Ok::<_, Status>((storage, control))
-        })?;
-        let client = GcsClient { storage, control, user_agent, quota_project, retry_cb: cfg.retry_cb };
+            Ok::<_, Status>((storage, control, http))
+        };
+        // Build on a core thread, so any I/O (e.g. a metadata-server lookup) runs with SIGPIPE
+        // blocked (see block_sigpipe), never on the host's thread. block_on panics on a runtime
+        // thread (e.g. a client created inside a retry callback): wait on a helper thread then.
+        let task = rt().spawn(build);
+        let wait = move || -> Result<_, Status> {
+            rt().block_on(task).map_err(|e| Status::err(format!("building the client: {e}")))?
+        };
+        let (storage, control, http) = if tokio::runtime::Handle::try_current().is_ok() {
+            std::thread::scope(|sc| sc.spawn(wait).join()).map_err(Status::from_panic)??
+        } else {
+            wait()?
+        };
+        let client = GcsClient {
+            storage,
+            control,
+            user_agent,
+            quota_project,
+            retry_cb: cfg.retry_cb,
+            release_cb: cfg.release_cb,
+            credentials: json_credentials,
+            http,
+            json_endpoint,
+        };
         unsafe { *out = Box::into_raw(Box::new(client)) };
         Ok(())
     })

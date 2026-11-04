@@ -1,4 +1,4 @@
-/* C ABI of gcs_core v3 (hand-written; keep in sync with gcs_core/src/*.rs).
+/* C ABI of gcs_core v4 (hand-written; keep in sync with gcs_core/src/*.rs).
  *
  * Used by the Go SDK via cgo. Nothing in it is Go-specific (plain C types, JSON payloads, opaque
  * handles, completion callbacks), so other language SDKs can bind to the same core:
@@ -47,6 +47,9 @@ typedef void (*GcsDoneCb)(uintptr_t user, GcsStatus status, uint64_t n);
 typedef int32_t (*GcsTokenCb)(uintptr_t user, char **out_token, int64_t *out_expiry_unix, char **out_err);
 /* Evaluates a caller retry predicate (opts.retry.predicate); non-zero = retry. Owns status. */
 typedef int32_t (*GcsRetryCb)(uintptr_t predicate, GcsStatus status, uint32_t attempt);
+/* Called exactly once after the core's last use of a host value it was given (token_user, a
+ * retry predicate id), also when the operation fails synchronously. */
+typedef void (*GcsReleaseCb)(uintptr_t user);
 
 typedef struct GcsClientConfig {
   const char *endpoint;      /* JSON/data path, NULL = https://storage.googleapis.com */
@@ -60,6 +63,8 @@ typedef struct GcsClientConfig {
   GcsTokenCb token_cb;
   uintptr_t token_user;
   GcsRetryCb retry_cb; /* may be NULL */
+  GcsReleaseCb release_cb; /* may be NULL */
+  uint32_t grpc_subchannels; /* data-path gRPC connections, 0 = SDK default (one per CPU) */
 } GcsClientConfig;
 
 uint32_t gcs_abi_version(void);

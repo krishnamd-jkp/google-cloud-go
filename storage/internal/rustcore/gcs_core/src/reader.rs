@@ -2,7 +2,8 @@
 //!
 //! Request: proto3-JSON `google.storage.v2.ReadObjectRequest` (bucket, object, generation,
 //! readOffset/readLimit, preconditions, commonObjectRequestParams for CSEK). Options: retry,
-//! `decompress`, `verifyCrc32c`, `prefetchBytes`, `metadataOnly`, `userProject`.
+//! `grpc` (BidiReadObject over CloudPath instead of the JSON API), `decompress` (JSON only),
+//! `verifyCrc32c`, `prefetchBytes`, `metadataOnly`, `userProject`.
 //!
 //! A background task prefetches response chunks into a bounded queue; `gcs_reader_read` first
 //! drains that queue *synchronously* (one plain FFI call, one memcpy), and only registers an
@@ -16,6 +17,7 @@ use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex};
 
 use bytes::{Buf, Bytes};
+use google_cloud_storage::builder::storage::{OpenObject, ReadObject};
 use google_cloud_storage::model;
 use google_cloud_storage::model_ext::{KeyAes256, ReadRange};
 use google_cloud_storage::read_object::ReadObjectResponse;
@@ -193,12 +195,48 @@ fn envelope(obj: &model::Object, read_offset: i64, remaining: i64, decompressed:
     CString::new(js).map_err(|e| Status::err(e.to_string()))
 }
 
+/// The SDK range for a v2 `readOffset`/`readLimit` pair (a negative offset is a tail read).
+fn read_range(offset: i64, limit: i64) -> ReadRange {
+    if limit > 0 {
+        ReadRange::segment(offset as u64, limit as u64)
+    } else if offset < 0 {
+        ReadRange::tail(offset.unsigned_abs())
+    } else if offset > 0 {
+        ReadRange::offset(offset as u64)
+    } else {
+        ReadRange::all()
+    }
+}
+
+/// First byte and length served for a request, given the object size.
+fn span(offset: i64, limit: i64, size: i64) -> (i64, i64) {
+    if limit == 0 && offset < 0 {
+        let n = offset.unsigned_abs().min(size.max(0) as u64) as i64;
+        (size - n, n)
+    } else if limit == 0 {
+        (offset, (size - offset).max(0))
+    } else {
+        (offset, limit.min((size - offset).max(0)))
+    }
+}
+
+/// How a read is opened.
+enum Opener {
+    /// Zero-length JSON read: object metadata only (one GetObject, no media request).
+    Metadata(model::GetObjectRequest),
+    /// JSON API media download (`Storage::read_object`).
+    Json(ReadObject),
+    /// gRPC CloudPath (`BidiReadObject` through `Storage::open_object`).
+    Grpc(OpenObject),
+}
+
 /// Builds the future that opens a read.
 fn open_future(
     client: &GcsClient,
     req: &[u8],
-    opts: CallOptions,
+    mut opts: CallOptions,
 ) -> Result<impl std::future::Future<Output = Result<u64, Status>> + Send + 'static, Status> {
+    opts.bind(client);
     let r: model::ReadObjectRequest =
         serde_json::from_slice(req).map_err(|e| Status::invalid(format!("ReadObjectRequest: {e}")))?;
     if r.object.is_empty() || r.bucket.is_empty() {
@@ -216,10 +254,44 @@ fn open_future(
     let client = client.clone();
     let limit_bytes = if opts.prefetch_bytes > 0 { opts.prefetch_bytes } else { DEFAULT_PREFETCH };
 
-    // Zero-length reads: metadata only (one GetObject, no media request).
-    let meta_req = opts.metadata_only.then(|| {
+    // Generation, preconditions, CSEK, checksums, retry and resumption apply to every transport.
+    macro_rules! common {
+        ($b:expr) => {{
+            let mut b = $b;
+            if r.generation != 0 {
+                b = b.set_generation(r.generation);
+            }
+            if let Some(v) = r.if_generation_match {
+                b = b.set_if_generation_match(v);
+            }
+            if let Some(v) = r.if_generation_not_match {
+                b = b.set_if_generation_not_match(v);
+            }
+            if let Some(v) = r.if_metageneration_match {
+                b = b.set_if_metageneration_match(v);
+            }
+            if let Some(v) = r.if_metageneration_not_match {
+                b = b.set_if_metageneration_not_match(v);
+            }
+            if let Some(k) = key {
+                b = b.set_key(k);
+            }
+            if opts.verify_crc32c == Some(false) {
+                b = b.compute_crc32c(false);
+            }
+            let b = apply_data_opts!(b, &opts, &client);
+            // Resuming an interrupted download is governed by the caller's retry settings too.
+            match opts.resume_policy() {
+                Some(p) => b.with_read_resume_policy(p),
+                None => b,
+            }
+        }};
+    }
+
+    let opener = if opts.metadata_only && !opts.grpc {
+        // Zero-length JSON reads: metadata only (one GetObject, no media request).
         let mut g = model::GetObjectRequest::default();
-        g.bucket = bucket.clone();
+        g.bucket = bucket;
         g.object = r.object.clone();
         g.generation = r.generation;
         g.if_generation_match = r.if_generation_match;
@@ -227,88 +299,87 @@ fn open_future(
         g.if_metageneration_match = r.if_metageneration_match;
         g.if_metageneration_not_match = r.if_metageneration_not_match;
         g.common_object_request_params = r.common_object_request_params.clone();
-        g
-    });
-
-    let mut rb = client.storage.read_object(bucket, r.object.clone());
-    rb = rb.set_read_range(if limit > 0 {
-        ReadRange::segment(offset as u64, limit as u64)
-    } else if offset < 0 {
-        ReadRange::tail(offset.unsigned_abs())
-    } else if offset > 0 {
-        ReadRange::offset(offset as u64)
+        Opener::Metadata(g)
+    } else if opts.grpc {
+        // gRPC (CloudPath): BidiReadObject; the range is sent with the open (`send_and_read`).
+        // Zero-length reads open the stream too and close it once the first response (with the
+        // object) arrived, as the Go SDK's gRPC readers do.
+        Opener::Grpc(common!(client.storage.open_object(bucket, r.object.clone())))
     } else {
-        ReadRange::all()
-    });
-    if r.generation != 0 {
-        rb = rb.set_generation(r.generation);
-    }
-    if let Some(v) = r.if_generation_match {
-        rb = rb.set_if_generation_match(v);
-    }
-    if let Some(v) = r.if_generation_not_match {
-        rb = rb.set_if_generation_not_match(v);
-    }
-    if let Some(v) = r.if_metageneration_match {
-        rb = rb.set_if_metageneration_match(v);
-    }
-    if let Some(v) = r.if_metageneration_not_match {
-        rb = rb.set_if_metageneration_not_match(v);
-    }
-    if let Some(k) = key {
-        rb = rb.set_key(k);
-    }
-    // The v2 API returns stored bytes; decompressive transcoding is a caller choice (Go's
-    // Reader decompresses by default unless ReadCompressed(true)).
-    rb = rb.with_automatic_decompression(opts.decompress);
-    if opts.verify_crc32c == Some(false) {
-        rb = rb.compute_crc32c(false);
-    }
-    let rb = apply_data_opts!(rb, &opts, &client);
+        // The v2 API returns stored bytes; decompressive transcoding is a caller choice (Go's
+        // Reader decompresses by default unless ReadCompressed(true)).
+        let rb = client
+            .storage
+            .read_object(bucket, r.object.clone())
+            .set_read_range(read_range(offset, limit))
+            .with_automatic_decompression(opts.decompress);
+        Opener::Json(common!(rb))
+    };
     let decompress = opts.decompress;
+    let metadata_only = opts.metadata_only;
     let (bucket_s, object_s) = (r.bucket.clone(), r.object.clone());
 
     Ok(async move {
-        if let Some(g) = meta_req {
-            let ro = opts.request_options(&client, true)?;
-            let obj = client.control.get_object().with_request(g).with_options(ro).send().await.map_err(|e| Status::from_sdk(&e))?;
-            let reader = GcsReader {
-                shared: new_shared(limit_bytes, Some(Ok(()))),
-                task: None,
-                metadata_json: envelope(&obj, 0, 0, false)?,
-            };
-            return Ok(Box::into_raw(Box::new(reader)) as u64);
-        }
-        let resp = rb.send().await.map_err(|e| Status::from_sdk(&e))?;
-        let hl = resp.object();
-        let size = hl.size;
-        let (start, mut remain) = if limit == 0 && offset < 0 {
-            let n = offset.unsigned_abs().min(size.max(0) as u64) as i64;
-            (size - n, n)
-        } else if limit == 0 {
-            (offset, (size - offset).max(0))
-        } else {
-            (offset, limit.min((size - offset).max(0)))
+        let (resp, metadata_json) = match opener {
+            Opener::Metadata(g) => {
+                let ro = opts.request_options(&client, true)?;
+                let obj =
+                    client.control.get_object().with_request(g).with_options(ro).send().await.map_err(|e| Status::from_sdk(&e))?;
+                let reader = GcsReader {
+                    shared: new_shared(limit_bytes, Some(Ok(()))),
+                    task: None,
+                    metadata_json: envelope(&obj, 0, 0, false)?,
+                };
+                return Ok(Box::into_raw(Box::new(reader)) as u64);
+            }
+            Opener::Grpc(ob) => {
+                let (descriptor, resp) = ob.send_and_read(read_range(offset, limit)).await.map_err(|e| Status::from_sdk(&e))?;
+                // The descriptor carries the full object resource; gRPC never transcodes.
+                // Dropping it is fine: the range reader keeps the stream's worker alive.
+                let obj = descriptor.object();
+                if metadata_only {
+                    // Zero-length read: the first response has arrived; dropping the range
+                    // reader and the descriptor closes the stream.
+                    let (start, _) = span(offset, 0, obj.size);
+                    let reader = GcsReader {
+                        shared: new_shared(limit_bytes, Some(Ok(()))),
+                        task: None,
+                        metadata_json: envelope(&obj, start, 0, false)?,
+                    };
+                    return Ok(Box::into_raw(Box::new(reader)) as u64);
+                }
+                let (start, remain) = span(offset, limit, obj.size);
+                (resp, envelope(&obj, start, remain, false)?)
+            }
+            Opener::Json(rb) => {
+                let resp = rb.send().await.map_err(|e| Status::from_sdk(&e))?;
+                let hl = resp.object();
+                let (start, mut remain) = span(offset, limit, hl.size);
+                // With decompressive transcoding GCS ignores the Range header and serves the
+                // whole decompressed object (verified against the native client), so a
+                // requested range does not change this.
+                let decompressed = decompress && hl.content_encoding == "gzip";
+                if decompressed {
+                    remain = -1;
+                }
+                let mut obj = model::Object::default();
+                obj.bucket = bucket_name(&bucket_s);
+                obj.name = object_s;
+                obj.generation = hl.generation;
+                obj.metageneration = hl.metageneration;
+                obj.size = hl.size;
+                obj.content_encoding = hl.content_encoding.clone();
+                obj.content_type = hl.content_type.clone();
+                obj.content_language = hl.content_language.clone();
+                obj.content_disposition = hl.content_disposition.clone();
+                obj.storage_class = hl.storage_class.clone();
+                obj.etag = hl.etag.clone();
+                obj.metadata = hl.metadata.clone().into_iter().collect();
+                obj.checksums = hl.checksums.clone();
+                let metadata_json = envelope(&obj, start, remain, decompressed)?;
+                (resp, metadata_json)
+            }
         };
-        let decompressed = decompress && hl.content_encoding == "gzip";
-        if decompressed {
-            remain = -1;
-        }
-        let mut obj = model::Object::default();
-        obj.bucket = bucket_name(&bucket_s);
-        obj.name = object_s;
-        obj.generation = hl.generation;
-        obj.metageneration = hl.metageneration;
-        obj.size = hl.size;
-        obj.content_encoding = hl.content_encoding.clone();
-        obj.content_type = hl.content_type.clone();
-        obj.content_language = hl.content_language.clone();
-        obj.content_disposition = hl.content_disposition.clone();
-        obj.storage_class = hl.storage_class.clone();
-        obj.etag = hl.etag.clone();
-        obj.metadata = hl.metadata.clone().into_iter().collect();
-        obj.checksums = hl.checksums.clone();
-        let metadata_json = envelope(&obj, start, remain, decompressed)?;
         let shared = new_shared(limit_bytes, None);
         let task = rt().spawn(prefetch(shared.clone(), resp));
         let reader = GcsReader { shared, task: Some(task.abort_handle()), metadata_json };

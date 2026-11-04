@@ -38,6 +38,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
@@ -643,7 +644,10 @@ func TestRustCoreRetryHandOff(t *testing.T) {
 	// gcs_call. Delete with a generation is idempotent, so the core may retry it.
 	var calls atomic.Int32
 	o := missing.Generation(1).Retryer(
-		WithErrorFunc(func(err error) bool { calls.Add(1); return errors.Is(err, ErrObjectNotExist) || status.Code(err) == codes.NotFound }),
+		WithErrorFunc(func(err error) bool {
+			calls.Add(1)
+			return errors.Is(err, ErrObjectNotExist) || status.Code(err) == codes.NotFound
+		}),
 		WithMaxAttempts(3),
 		WithBackoff(gaxBackoffForTest()),
 	)
@@ -672,4 +676,300 @@ func TestRustCoreRetryHandOff(t *testing.T) {
 
 func gaxBackoffForTest() gax.Backoff {
 	return gax.Backoff{Initial: 10 * time.Millisecond, Max: 50 * time.Millisecond, Multiplier: 2}
+}
+
+// ---- Regression tests for the independent review (F-03, F-05, F-11, F-13) ----------------
+
+// PredefinedACL must be sent on uploads (same outcome as the native client), and object
+// retention must be rejected rather than silently dropped.
+func TestRustCoreWriterPredefinedACLAndRetention(t *testing.T) {
+	rc, nc, bucket := rustTestClients(t)
+	ctx := context.Background()
+	var errs [2]error
+	var acls [2]int
+	for i, c := range []*Client{nc, rc} {
+		name := fmt.Sprintf("predefined-acl-%d", i)
+		w := c.Bucket(bucket).Object(rustTestPrefix + name).NewWriter(ctx)
+		w.PredefinedACL = "projectPrivate"
+		w.Write([]byte("acl"))
+		errs[i] = w.Close()
+		if errs[i] == nil {
+			a, err := nc.Bucket(bucket).Object(rustTestPrefix + name).Attrs(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			acls[i] = len(a.ACL)
+		}
+	}
+	if (errs[0] == nil) != (errs[1] == nil) || httpCode(errs[0]) != httpCode(errs[1]) || acls[0] != acls[1] {
+		t.Errorf("PredefinedACL: native err=%v acl=%d, rust err=%v acl=%d", errs[0], acls[0], errs[1], acls[1])
+	}
+	t.Logf("PredefinedACL projectPrivate: native err=%v acl entries=%d; rust err=%v acl entries=%d", errs[0], acls[0], errs[1], acls[1])
+
+	w := rc.Bucket(bucket).Object(rustTestPrefix + "retention").NewWriter(ctx)
+	w.Retention = &ObjectRetention{Mode: "Unlocked", RetainUntil: time.Now().Add(time.Hour)}
+	w.Write([]byte("retained"))
+	if err := w.Close(); status.Code(err) != codes.Unimplemented {
+		t.Errorf("upload with Retention: want Unimplemented, got %v", err)
+	}
+	if _, err := nc.Bucket(bucket).Object(rustTestPrefix + "retention").Attrs(ctx); !errors.Is(err, ErrObjectNotExist) {
+		t.Errorf("object written without its retention: %v", err)
+	}
+}
+
+// ChunkSize == 0 streams without chunk buffering; content must round-trip.
+func TestRustCoreChunkSizeZero(t *testing.T) {
+	rc, nc, bucket := rustTestClients(t)
+	ctx := context.Background()
+	data := randBytes(3<<20 + 7)
+	w := rc.Bucket(bucket).Object(rustTestPrefix + "chunk0").NewWriter(ctx)
+	w.ChunkSize = 0
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r, err := nc.Bucket(bucket).Object(rustTestPrefix + "chunk0").NewReader(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := io.ReadAll(r)
+	r.Close()
+	if !bytes.Equal(got, data) {
+		t.Errorf("ChunkSize=0 upload: got %d bytes, want %d", len(got), len(data))
+	}
+}
+
+// Ranged reads of gzip objects: bytes and Attrs.Decompressed must match the native client.
+func TestRustCoreGzipRangedRead(t *testing.T) {
+	rc, nc, bucket := rustTestClients(t)
+	ctx := context.Background()
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	zw.Write([]byte(strings.Repeat("ranged gzip ", 2000)))
+	zw.Close()
+	w := nc.Bucket(bucket).Object(rustTestPrefix + "gz-range").NewWriter(ctx)
+	w.ContentEncoding, w.ContentType = "gzip", "text/plain"
+	w.Write(gz.Bytes())
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, rg := range [][2]int64{{10, 50}, {0, 100}, {20, -1}} {
+		var out [2][]byte
+		var dec [2]bool
+		var errs [2]error
+		for i, c := range []*Client{nc, rc} {
+			r, err := c.Bucket(bucket).Object(rustTestPrefix+"gz-range").NewRangeReader(ctx, rg[0], rg[1])
+			if err != nil {
+				errs[i] = err
+				continue
+			}
+			out[i], errs[i] = io.ReadAll(r)
+			dec[i] = r.Attrs.Decompressed
+			r.Close()
+		}
+		if (errs[0] == nil) != (errs[1] == nil) || !bytes.Equal(out[0], out[1]) || dec[0] != dec[1] {
+			t.Errorf("NewRangeReader(%d,%d) on gzip: native %d bytes decompressed=%v err=%v; rust %d bytes decompressed=%v err=%v",
+				rg[0], rg[1], len(out[0]), dec[0], errs[0], len(out[1]), dec[1], errs[1])
+		}
+	}
+}
+
+// WithMaxAttempts(0) means a single attempt (as in the Go retry loop), not "unlimited".
+func TestRustCoreMaxAttemptsZero(t *testing.T) {
+	rc, _, bucket := rustTestClients(t)
+	var calls atomic.Int32
+	o := rc.Bucket(bucket).Object(rustTestPrefix+"never-written").Generation(1).Retryer(
+		WithPolicy(RetryAlways),
+		WithErrorFunc(func(error) bool { calls.Add(1); return true }),
+		WithMaxAttempts(0),
+		WithBackoff(gaxBackoffForTest()),
+	)
+	start := time.Now()
+	if err := o.Delete(context.Background()); status.Code(err) != codes.NotFound {
+		t.Errorf("Delete: want NotFound, got %v", err)
+	}
+	if c := calls.Load(); c > 1 {
+		t.Errorf("WithMaxAttempts(0) retried: predicate evaluated %d times", c)
+	}
+	t.Logf("single attempt in %v (predicate evaluated %d times)", time.Since(start).Round(time.Millisecond), calls.Load())
+}
+
+func listAll(t *testing.T, c *Client, bucket string, q *Query, pageSize int) []*ObjectAttrs {
+	t.Helper()
+	var out []*ObjectAttrs
+	p := iterator.NewPager(c.Bucket(bucket).Objects(context.Background(), q), pageSize, "")
+	for {
+		var page []*ObjectAttrs
+		tok, err := p.NextPage(&page)
+		if err != nil {
+			t.Fatalf("list %+v: %v", q, err)
+		}
+		out = append(out, page...)
+		if tok == "" {
+			return out
+		}
+	}
+}
+
+func writeObjWithAttrs(t *testing.T, c *Client, bucket, name string, data []byte, i int) {
+	t.Helper()
+	w := c.Bucket(bucket).Object(rustTestPrefix + name).NewWriter(context.Background())
+	w.ContentType = "text/plain"
+	w.CacheControl = "no-cache"
+	w.ContentLanguage = "en"
+	w.Metadata = map[string]string{"k": strconv.Itoa(i), "Mixed-Case": "v"}
+	if _, err := w.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// JSON listing through the core (storage.objects.list in gcs_core): ObjectAttrs identical to the
+// pure-Go JSON client's, with paging, attribute selection and the missing-bucket error.
+func TestRustCoreJSONListParity(t *testing.T) {
+	rc, nc, bucket := rustTestClients(t)
+	if rc.tc.(*rustStorageClient).grpc {
+		t.Fatal("NewClient + WithRustCore must list over the JSON API")
+	}
+	for i := 0; i < 5; i++ {
+		writeObjWithAttrs(t, nc, bucket, fmt.Sprintf("attrs/%d", i), randBytes(100*(i+1)), i)
+	}
+	q := &Query{Prefix: rustTestPrefix + "attrs/"}
+	ra, na := listAll(t, rc, bucket, q, 2), listAll(t, nc, bucket, q, 2)
+	if len(ra) != 5 || len(na) != 5 {
+		t.Fatalf("got %d (rust) / %d (native) objects, want 5", len(ra), len(na))
+	}
+	for i := range ra {
+		if !reflect.DeepEqual(ra[i], na[i]) {
+			t.Errorf("object %d differs:\n rust   %+v\n native %+v", i, ra[i], na[i])
+		}
+	}
+
+	sel := &Query{Prefix: rustTestPrefix + "attrs/"}
+	if err := sel.SetAttrSelection([]string{"Name", "Size"}); err != nil {
+		t.Fatal(err)
+	}
+	ra, na = listAll(t, rc, bucket, sel, 3), listAll(t, nc, bucket, sel, 3)
+	if len(ra) != 5 || !reflect.DeepEqual(ra, na) {
+		t.Errorf("attribute selection differs: rust %d entries, native %d", len(ra), len(na))
+	}
+	if len(ra) > 0 && (ra[0].ContentType != "" || ra[0].Size == 0) {
+		t.Errorf("selection not applied: %+v", ra[0])
+	}
+
+	_, err := rc.Bucket(fmt.Sprintf("rustcore-missing-%d", time.Now().UnixNano())).Objects(context.Background(), nil).Next()
+	if !errors.Is(err, ErrBucketNotExist) {
+		t.Errorf("missing bucket: got %v, want ErrBucketNotExist", err)
+	}
+}
+
+// NewGRPCClient + WithRustCore: reads over BidiReadObject (Storage::open_object) and listing over
+// the v2 ListObjects RPC, both CloudPath, compared with the pure-Go gRPC client (CloudPath).
+func TestRustCoreGRPCParity(t *testing.T) {
+	if os.Getenv("RUST_DP_TEST_BUCKET") == "" {
+		t.Skip("set RUST_DP_TEST_BUCKET (real GCS)")
+	}
+	t.Setenv("GOOGLE_CLOUD_DISABLE_DIRECT_PATH", "true") // the core has no DirectPath
+	_, nc, bucket := rustTestClients(t)
+	ctx := context.Background()
+	rg, err := NewGRPCClient(ctx, experimental.WithRustCore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rg.Close()
+	if c, ok := rg.tc.(*rustStorageClient); !ok || !c.grpc {
+		t.Fatalf("NewGRPCClient(WithRustCore): want a gRPC rust core client, got %T", rg.tc)
+	}
+	ng, err := NewGRPCClient(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ng.Close()
+	nb, err := NewGRPCClient(ctx, WithGRPCBidiReads()) // the RPC the core reads with
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer nb.Close()
+
+	data := randBytes(5<<20 + 123) // several 2 MiB gRPC messages
+	writeObjWithAttrs(t, nc, bucket, "grpc/big", data, 0)
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	zw.Write(bytes.Repeat([]byte("compressible "), 10000))
+	zw.Close()
+	w := nc.Bucket(bucket).Object(rustTestPrefix + "grpc/gz").NewWriter(ctx)
+	w.ContentEncoding, w.ContentType = "gzip", "text/plain"
+	w.Write(gz.Bytes())
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	read := func(c *Client, name string, off, n int64) ([]byte, ReaderObjectAttrs, map[string]string, int64) {
+		t.Helper()
+		r, err := c.Bucket(bucket).Object(rustTestPrefix+name).NewRangeReader(ctx, off, n)
+		if err != nil {
+			t.Fatalf("NewRangeReader(%s, %d, %d): %v", name, off, n, err)
+		}
+		defer r.Close()
+		remain := r.Remain()
+		b, err := io.ReadAll(r)
+		if err != nil {
+			t.Fatalf("read %s [%d, %d): %v", name, off, n, err)
+		}
+		return b, r.Attrs, r.Metadata(), remain
+	}
+	for _, tc := range []struct {
+		name   string
+		off, n int64
+	}{
+		{"grpc/big", 0, -1},
+		{"grpc/big", 100, 1000},
+		{"grpc/big", 3 << 20, -1},
+		{"grpc/big", -777, -1},
+		{"grpc/big", 0, 0},
+		{"grpc/big", 4321, 0}, // zero-length: a read stream closed after its first response
+		{"grpc/gz", 0, -1},
+	} {
+		rb, rattrs, rmd, rrem := read(rg, tc.name, tc.off, tc.n)
+		for _, native := range []struct {
+			name string
+			c    *Client
+		}{{"native", ng}, {"native bidi", nb}} {
+			nbytes, nattrs, nmd, nrem := read(native.c, tc.name, tc.off, tc.n)
+			if !bytes.Equal(rb, nbytes) {
+				t.Errorf("%s [%d,%d): rust read %d bytes, %s %d (equal=%v)", tc.name, tc.off, tc.n, len(rb), native.name, len(nbytes), bytes.Equal(rb, nbytes))
+			}
+			if rattrs != nattrs || !reflect.DeepEqual(rmd, nmd) || rrem != nrem {
+				t.Errorf("%s [%d,%d) attrs differ:\n rust   %+v md=%v remain=%d\n %s %+v md=%v remain=%d",
+					tc.name, tc.off, tc.n, rattrs, rmd, rrem, native.name, nattrs, nmd, nrem)
+			}
+		}
+	}
+	if _, err := rg.Bucket(bucket).Object(rustTestPrefix + "grpc/missing").NewReader(ctx); !errors.Is(err, ErrObjectNotExist) {
+		t.Errorf("missing object: got %v, want ErrObjectNotExist", err)
+	}
+
+	for i := 0; i < 4; i++ {
+		writeObj(t, nc, bucket, fmt.Sprintf("grpc/list/%d", i), []byte("x"))
+	}
+	writeObj(t, nc, bucket, "grpc/list/sub/x", []byte("x"))
+	for _, q := range []*Query{
+		{Prefix: rustTestPrefix + "grpc/list/"},
+		{Prefix: rustTestPrefix + "grpc/list/", Delimiter: "/"},
+	} {
+		ra, na := listAll(t, rg, bucket, q, 2), listAll(t, ng, bucket, q, 2)
+		if !reflect.DeepEqual(ra, na) {
+			t.Errorf("gRPC list %+v differs: rust %d entries, native %d", q, len(ra), len(na))
+			for i := range min(len(ra), len(na)) {
+				if !reflect.DeepEqual(ra[i], na[i]) {
+					t.Logf(" first difference:\n rust   %+v\n native %+v", ra[i], na[i])
+					break
+				}
+			}
+		}
+	}
 }

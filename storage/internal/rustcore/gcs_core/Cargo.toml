@@ -23,12 +23,17 @@ bytes = "1"
 futures = "0.3"
 # Pin the exact SDK version: every language binding is version-locked to one Rust core build.
 google-cloud-storage = { version = "=1.20.0", default-features = false }
-google-cloud-auth = { version = "1.17", default-features = false }
-google-cloud-gax = { version = "1.15", default-features = false }
+google-cloud-auth = { version = "=1.17.0", default-features = false }
+google-cloud-gax = { version = "=1.15.0", default-features = false }
 # Request/response types of the IAM RPCs (GetIamPolicy, SetIamPolicy, TestIamPermissions).
 google-cloud-iam-v1 = { version = "=1.13.0", default-features = false }
-google-cloud-wkt = { version = "1.9", default-features = false }
+google-cloud-wkt = { version = "=1.9.0", default-features = false }
 http = "1"
+# Already in the dependency graph (through tokio); used to block SIGPIPE on the core's threads.
+libc = "0.2"
+# Already in the dependency graph (through the SDK); used directly for JSON API calls the SDK
+# does not offer (listing over HTTP/JSON).
+reqwest = { version = "=0.13.5", default-features = false, features = ["json", "query"] }
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "logging"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

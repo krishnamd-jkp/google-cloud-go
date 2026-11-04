@@ -46,6 +46,7 @@ func newRustRetryTestClient(ctx context.Context, retryTestID string) (*Client, e
 	if err != nil {
 		return nil, err
 	}
+	c.tc.Close() // replaced: do not leak the JSON client
 	c.tc = rc
 	return c, nil
 }

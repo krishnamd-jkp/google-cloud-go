@@ -65,14 +65,17 @@ var _ storageRPC = (*gapic.Client)(nil)
 type engineCallKey struct{}
 
 // engineCall carries the caller's retry configuration of a call served by the Rust core: run()
-// makes a single attempt and the core executes the retry policy (see invoke.go).
+// makes a single attempt and the core executes the retry policy (see invoke.go). idempotent is
+// the veneer's own classification, which the core uses to narrow (never widen) its per-RPC
+// rule.
 type engineCall struct {
-	retry *retryConfig
-	rctx  *RetryContext
+	retry      *retryConfig
+	rctx       *RetryContext
+	idempotent bool
 }
 
-func withEngineCall(ctx context.Context, r *retryConfig, rctx *RetryContext) context.Context {
-	return context.WithValue(ctx, engineCallKey{}, &engineCall{retry: r, rctx: rctx})
+func withEngineCall(ctx context.Context, r *retryConfig, rctx *RetryContext, idempotent bool) context.Context {
+	return context.WithValue(ctx, engineCallKey{}, &engineCall{retry: r, rctx: rctx, idempotent: idempotent})
 }
 
 func engineCallFrom(ctx context.Context) *engineCall {

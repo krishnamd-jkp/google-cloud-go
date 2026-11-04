@@ -23,12 +23,14 @@ package rustcore
 extern void rustcoreDone(uintptr_t user, GcsStatus st, uint64_t n);
 extern int32_t rustcoreToken(uintptr_t user, char **tok, int64_t *exp, char **err);
 extern int32_t rustcoreRetry(uintptr_t predicate, GcsStatus st, uint32_t attempt);
+extern void rustcoreRelease(uintptr_t user);
 
 // Thin trampolines: Go cannot take the address of an exported Go function, and doing the
 // integer<->pointer conversions here keeps them out of Go (no unsafe.Pointer(uintptr(x))).
 static GcsStatus rc_client_new(GcsClientConfig *cfg, GcsClient **out, int token_cb) {
 	if (token_cb) cfg->token_cb = rustcoreToken;
 	cfg->retry_cb = rustcoreRetry;
+	cfg->release_cb = rustcoreRelease;
 	return gcs_client_new(cfg, out);
 }
 static int32_t rc_call(const GcsClient *c, const char *method, const uint8_t *req, size_t req_len,
@@ -80,7 +82,7 @@ import (
 const Available = true
 
 // ABIVersion is the gcs_core ABI this binding was written against.
-const ABIVersion = 3
+const ABIVersion = 4
 
 // Status codes (mirror GCS_* in gcs_core.h).
 const (
@@ -234,14 +236,20 @@ type ClientConfig struct {
 	QuotaProject    string
 	UserAgent       string
 	Headers         http.Header // sent on every data-path request
+	// GRPCSubchannels is the number of gRPC connections of the data path; 0 = the Rust SDK's
+	// default (one per CPU).
+	GRPCSubchannels int
 }
 
 // Client is a handle to a core client. Safe for concurrent use.
 type Client struct {
-	mu     sync.RWMutex
-	p      *C.GcsClient
-	tokenH cgo.Handle
+	mu sync.RWMutex
+	p  *C.GcsClient
 }
+
+// RegisteredCallbacks reports how many host values (token sources, retry predicates) the core
+// currently holds; it returns to its previous value once clients and operations are released.
+func RegisteredCallbacks() int { return registered() }
 
 // NewClient creates a core client.
 func NewClient(cfg ClientConfig) (*Client, error) {
@@ -265,29 +273,33 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		user_agent:       cm.str(cfg.UserAgent),
 		custom_headers:   cm.str(hdr.String()),
 		auth_mode:        C.int32_t(cfg.Auth),
+		grpc_subchannels: C.uint32_t(max(cfg.GRPCSubchannels, 0)),
 	}
 	c := &Client{}
 	useCB := C.int(0)
+	var tokenID uint64
 	if cfg.Auth == AuthTokenSource {
 		if cfg.TokenSource == nil {
 			return nil, errors.New("rustcore: AuthTokenSource requires a TokenSource")
 		}
-		c.tokenH = cgo.NewHandle(cfg.TokenSource)
-		ccfg.token_user = C.uintptr_t(c.tokenH)
+		// Released by the core (rustcoreRelease) when its last reference to the credentials
+		// is dropped: after Close and after the last in-flight operation.
+		tokenID = register(cfg.TokenSource)
+		ccfg.token_user = C.uintptr_t(tokenID)
 		useCB = 1
 	}
 	FFICalls.Add(1)
 	if err := takeStatus(C.rc_client_new(&ccfg, &c.p, useCB)); err != nil {
-		if c.tokenH != 0 {
-			c.tokenH.Delete()
+		if tokenID != 0 {
+			unregister(tokenID) // idempotent: the core may already have released it
 		}
 		return nil, err
 	}
 	return c, nil
 }
 
-// Close releases the client. Calls, readers and writers still in flight keep working.
-// The token handle is intentionally kept alive (in-flight operations may still refresh tokens).
+// Close releases the client. Calls, readers and writers still in flight keep working; the
+// core releases the token source after the last of them finishes.
 func (c *Client) Close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()

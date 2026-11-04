@@ -16,7 +16,7 @@ use google_cloud_auth::credentials::{CacheableResource, Credentials, Credentials
 use google_cloud_gax::error::CredentialsError;
 use http::{Extensions, HeaderMap, HeaderValue};
 
-use crate::{GcsTokenCb, Status, c_free, lock};
+use crate::{GcsReleaseCb, GcsTokenCb, Status, c_free, lock};
 
 pub(crate) fn from_json(js: &str) -> Result<Credentials, Status> {
     let v: serde_json::Value =
@@ -54,6 +54,18 @@ struct Cached {
 struct GoTokenCredentials {
     cb: TokenCb,
     cache: std::sync::Mutex<Option<Cached>>,
+    release: Option<GcsReleaseCb>,
+}
+
+/// The host's token source is released only after the last clone of these credentials (held
+/// by clients and in-flight operations) is gone, so a closed client never leaks it and an
+/// in-flight operation never sees it freed.
+impl Drop for GoTokenCredentials {
+    fn drop(&mut self) {
+        if let Some(release) = self.release {
+            unsafe { release(self.cb.user) };
+        }
+    }
 }
 
 impl std::fmt::Debug for GoTokenCredentials {
@@ -62,8 +74,8 @@ impl std::fmt::Debug for GoTokenCredentials {
     }
 }
 
-pub(crate) fn go_token_credentials(cb: GcsTokenCb, user: usize) -> Credentials {
-    Credentials::from(GoTokenCredentials { cb: TokenCb { cb, user }, cache: std::sync::Mutex::new(None) })
+pub(crate) fn go_token_credentials(cb: GcsTokenCb, user: usize, release: Option<GcsReleaseCb>) -> Credentials {
+    Credentials::from(GoTokenCredentials { cb: TokenCb { cb, user }, cache: std::sync::Mutex::new(None), release })
 }
 
 fn call_go(cb: TokenCb) -> Result<(String, i64), CredentialsError> {

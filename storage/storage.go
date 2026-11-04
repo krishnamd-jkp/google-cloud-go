@@ -231,23 +231,25 @@ func NewClient(ctx context.Context, opts ...option.ClientOption) (*Client, error
 		return nil, fmt.Errorf("supplied endpoint %q is not valid: %w", ep, err)
 	}
 
-	tc, err := newHTTPStorageClient(ctx, withClientOptions(opts...))
-	if err != nil {
-		return nil, fmt.Errorf("storage: %w", err)
-	}
-
-	var tcWrapped storageClient = tc
-	if httpClient, ok := tc.(*httpStorageClient); ok && httpClient.metrics != nil {
-		tcWrapped = &metricsStorageClient{
-			storageClient: tc,
-			metrics:       httpClient.metrics,
-			isHTTP:        true,
-		}
-	}
+	var tcWrapped storageClient
 	if newStorageConfig(opts...).rustCore {
-		// EXPERIMENTAL: every operation is served by the shared Rust core (rust_client.go).
+		// EXPERIMENTAL: every operation is served by the shared Rust core (rust_client.go); no
+		// Go transport client is created.
 		if tcWrapped, err = newRustCoreClient(ctx, ep, creds, nil, withClientOptions(opts...)); err != nil {
 			return nil, fmt.Errorf("storage: rust core: %w", err)
+		}
+	} else {
+		tc, err := newHTTPStorageClient(ctx, withClientOptions(opts...))
+		if err != nil {
+			return nil, fmt.Errorf("storage: %w", err)
+		}
+		tcWrapped = tc
+		if httpClient, ok := tc.(*httpStorageClient); ok && httpClient.metrics != nil {
+			tcWrapped = &metricsStorageClient{
+				storageClient: tc,
+				metrics:       httpClient.metrics,
+				isHTTP:        true,
+			}
 		}
 	}
 
@@ -279,6 +281,18 @@ func NewClient(ctx context.Context, opts ...option.ClientOption) (*Client, error
 // You may configure the client by passing in options from the [google.golang.org/api/option]
 // package.
 func NewGRPCClient(ctx context.Context, opts ...option.ClientOption) (*Client, error) {
+	if newStorageConfig(opts...).rustCore {
+		// EXPERIMENTAL: the shared Rust core (rust_client.go), reading and listing over gRPC.
+		// The core has no DirectPath support: it always uses CloudPath. Credentials and
+		// endpoints resolve as for NewClient.
+		c, err := NewClient(ctx, opts...)
+		if err != nil {
+			return nil, err
+		}
+		rustUseGRPC(c.tc)
+		c.rpcSystem = rpcSystemGRPC
+		return c, nil
+	}
 	tc, err := newGRPCStorageClient(ctx, withClientOptions(opts...))
 	if err != nil {
 		return nil, err

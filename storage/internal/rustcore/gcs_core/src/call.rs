@@ -40,6 +40,7 @@ pub const METHODS: &[&str] = &[
     "GetIamPolicy",
     "SetIamPolicy",
     "TestIamPermissions",
+    "storage.objects.list",
 ];
 
 fn typed<T: DeserializeOwned>(v: Value) -> Result<T, Status> {
@@ -139,6 +140,8 @@ pub(crate) async fn dispatch(client: GcsClient, method: String, req: Vec<u8>, op
         "GetIamPolicy" => send!(ctl.get_iam_policy(), req!(iam::GetIamPolicyRequest), policy::always),
         "SetIamPolicy" => send!(ctl.set_iam_policy(), req!(iam::SetIamPolicyRequest, update_mask), policy::set_iam_policy),
         "TestIamPermissions" => send!(ctl.test_iam_permissions(), req!(iam::TestIamPermissionsRequest), policy::always),
+        // JSON API methods the SDK does not offer (request/response: JSON API resources).
+        "storage.objects.list" => crate::json_api::list_objects(c, v, &opts).await,
         other => Err(Status::unimplemented(format!("gcs_core: method {other:?} is not supported"))),
     }
 }
@@ -169,9 +172,10 @@ pub unsafe extern "C" fn gcs_call(
             return Err(Status::invalid("null client"));
         }
         let client = unsafe { &*c }.clone();
+        let mut opts = CallOptions::parse(opts, opts_len)?;
+        opts.bind(&client);
         let method = unsafe { req_str(method, "method") }?;
         let req = unsafe { bytes(req, req_len) }.to_vec();
-        let opts = CallOptions::parse(opts, opts_len)?;
         let id = spawn_op(
             async move {
                 let js = dispatch(client, method, req, opts).await?;

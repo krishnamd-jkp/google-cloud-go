@@ -200,6 +200,25 @@ func rustUnary[T proto.Message](ctx context.Context, core *rustcore.Client, meth
 	return resp, nil
 }
 
+// rustJSONCall calls a core method whose request and response are plain JSON (the JSON API
+// methods the core implements itself, e.g. "storage.objects.list") and returns the raw response.
+func rustJSONCall(ctx context.Context, core *rustcore.Client, method string, req any, o rustOptions) ([]byte, error) {
+	in, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	opts, release, err := rustCallOptions(ctx, o)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	out, err := core.Call(ctx, method, in, opts)
+	if err != nil {
+		return nil, rustToGoError(err, ctx)
+	}
+	return out, nil
+}
+
 // encodeRustRequest marshals req as proto3 JSON, except that FieldMask fields (read_mask,
 // update_mask) are sent as JSON arrays of raw paths: proto3 JSON camelCases mask paths, which
 // rejects the "*" wildcard and cannot represent map keys such as metadata.<key> or
@@ -246,17 +265,19 @@ func encodeRustRequest(req proto.Message) ([]byte, error) {
 // rustOptions is the options JSON of the core ABI (see gcs_core/src/options.rs).
 type rustOptions struct {
 	Retry        *rustRetryOptions `json:"retry,omitempty"`
+	Idempotent   *bool             `json:"idempotent,omitempty"`
 	UserProject  string            `json:"userProject,omitempty"`
 	Headers      map[string]string `json:"headers,omitempty"`
+	GRPC         bool              `json:"grpc,omitempty"` // reads: BidiReadObject (CloudPath)
 	Decompress   bool              `json:"decompress,omitempty"`
 	VerifyCRC32C *bool             `json:"verifyCrc32c,omitempty"`
 	MetadataOnly bool              `json:"metadataOnly,omitempty"`
-	ChunkSize    int               `json:"chunkSize,omitempty"`
+	ChunkSize    *int              `json:"chunkSize,omitempty"`
 }
 
 type rustRetryOptions struct {
 	Policy             string              `json:"policy,omitempty"`
-	MaxAttempts        int                 `json:"maxAttempts,omitempty"`
+	MaxAttempts        *int                `json:"maxAttempts,omitempty"`
 	MaxRetryDurationMs int64               `json:"maxRetryDurationMs,omitempty"`
 	Backoff            *rustBackoffOptions `json:"backoff,omitempty"`
 	Predicate          uint64              `json:"predicate,omitempty"`
@@ -270,7 +291,8 @@ type rustBackoffOptions struct {
 
 // toRustRetry translates the caller's retry configuration (storage.RetryPolicy, WithMaxAttempts,
 // WithMaxRetryDuration, WithBackoff, WithErrorFunc). It only *describes* the policy; the core
-// executes it. release must be called once the operation has completed.
+// executes it. The core releases the predicate after its last use; release is only for error
+// paths where the options never reached the core (it is idempotent).
 func toRustRetry(r *retryConfig, rctx *RetryContext) (*rustRetryOptions, func()) {
 	release := func() {}
 	if r == nil {
@@ -284,14 +306,21 @@ func toRustRetry(r *retryConfig, rctx *RetryContext) (*rustRetryOptions, func())
 		o.Policy = "never"
 	}
 	if r.maxAttempts != nil {
-		o.MaxAttempts = *r.maxAttempts
+		n := *r.maxAttempts
+		o.MaxAttempts = &n
 	}
-	o.MaxRetryDurationMs = r.maxRetryDuration.Milliseconds()
-	if b := r.backoff; b != nil && b.Initial > 0 {
+	if d := r.maxRetryDuration; d > 0 {
+		o.MaxRetryDurationMs = max(d.Milliseconds(), 1) // sub-millisecond limits stay limits
+	}
+	if b := r.backoff; b != nil {
+		// gax.Backoff zero values mean 1s / 30s / 2.0.
 		o.Backoff = &rustBackoffOptions{InitialMs: b.Initial.Milliseconds(), MaxMs: b.Max.Milliseconds(), Multiplier: b.Multiplier}
+		if b.Initial > 0 && o.Backoff.InitialMs == 0 {
+			o.Backoff.InitialMs = 1
+		}
 	}
 	if r.shouldRetry != nil {
-		h, rel := rustcore.RegisterRetryPredicate(func(e *rustcore.Error, attempt int) bool {
+		id, rel := rustcore.RegisterRetryPredicate(func(e *rustcore.Error, attempt int) bool {
 			var rc RetryContext
 			if rctx != nil {
 				rc = *rctx
@@ -299,7 +328,7 @@ func toRustRetry(r *retryConfig, rctx *RetryContext) (*rustRetryOptions, func())
 			rc.Attempt = attempt
 			return r.shouldRetry(rustToGoError(e, context.Background()), &rc)
 		})
-		o.Predicate, release = h, rel
+		o.Predicate, release = id, rel
 	}
 	return o, release
 }
@@ -310,6 +339,7 @@ func rustCallOptions(ctx context.Context, o rustOptions) ([]byte, func(), error)
 	release := func() {}
 	if ec := engineCallFrom(ctx); ec != nil && o.Retry == nil {
 		o.Retry, release = toRustRetry(ec.retry, ec.rctx)
+		o.Idempotent = &ec.idempotent
 	}
 	addHeader := func(k string, vs []string) {
 		switch k = strings.ToLower(k); k {

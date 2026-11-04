@@ -27,7 +27,10 @@ import "C"
 
 import (
 	"context"
+	"fmt"
 	"runtime/cgo"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -40,13 +43,44 @@ type result struct {
 //export rustcoreDone
 func rustcoreDone(user C.uintptr_t, st C.GcsStatus, n C.uint64_t) {
 	// Runs on a Rust runtime thread. The channel is buffered (cap 1) and receives exactly one
-	// value per pending operation, so this never blocks the Rust runtime.
+	// value per pending operation, so this never blocks the Rust runtime. Deliberately no
+	// recover: the handle is owned by a goroutine that is blocked on it, so a failure here is
+	// a binding bug, and swallowing it would hang that goroutine forever.
 	ch := cgo.Handle(user).Value().(chan result)
 	ch <- result{err: takeStatus(st), n: uint64(n)}
 }
 
-// TokenSource supplies OAuth2 access tokens to the engine (GCS_AUTH_TOKEN_CALLBACK). It lets
-// the Rust data path use exactly the credentials the Go client was configured with.
+// Values the core may call back into (token sources, retry predicates) are kept in a registry
+// under IDs that are never reused, instead of cgo.Handles: a call for an ID that was already
+// released fails cleanly (cgo.Handle.Value panics), and release is idempotent. The core
+// releases each ID through rustcoreRelease after its last use.
+var (
+	registry   sync.Map // uint64 -> any
+	registryID atomic.Uint64
+)
+
+func register(v any) uint64 {
+	id := registryID.Add(1)
+	registry.Store(id, v)
+	return id
+}
+
+func lookup(id uint64) (any, bool) { return registry.Load(id) }
+
+func unregister(id uint64) { registry.Delete(id) }
+
+// registered reports the number of live registry entries (for leak tests).
+func registered() int {
+	n := 0
+	registry.Range(func(any, any) bool { n++; return true })
+	return n
+}
+
+//export rustcoreRelease
+func rustcoreRelease(id C.uintptr_t) { unregister(uint64(id)) }
+
+// TokenSource supplies OAuth2 access tokens to the core (GCS_AUTH_TOKEN_CALLBACK). It lets the
+// core use exactly the credentials the Go client was configured with.
 type TokenSource interface {
 	Token(ctx context.Context) (token string, expiry time.Time, err error)
 }
@@ -54,12 +88,23 @@ type TokenSource interface {
 const tokenTimeout = 60 * time.Second
 
 //export rustcoreToken
-func rustcoreToken(user C.uintptr_t, outToken **C.char, outExpiry *C.int64_t, outErr **C.char) C.int32_t {
-	// Runs on a Tokio blocking-pool thread (never on an async worker).
-	ts := cgo.Handle(user).Value().(TokenSource)
+func rustcoreToken(user C.uintptr_t, outToken **C.char, outExpiry *C.int64_t, outErr **C.char) (rc C.int32_t) {
+	// Runs on a Tokio blocking-pool thread (never on an async worker). A panic must not unwind
+	// into Rust: report it as a token error instead.
+	defer func() {
+		if r := recover(); r != nil {
+			*outErr = C.CString(fmt.Sprintf("rustcore: token source panicked: %v", r))
+			rc = 1
+		}
+	}()
+	v, ok := lookup(uint64(user))
+	if !ok {
+		*outErr = C.CString("rustcore: token source already released")
+		return 1
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), tokenTimeout)
 	defer cancel()
-	tok, exp, err := ts.Token(ctx)
+	tok, exp, err := v.(TokenSource).Token(ctx)
 	if err != nil {
 		*outErr = C.CString(err.Error())
 		return 1
@@ -76,18 +121,32 @@ func rustcoreToken(user C.uintptr_t, outToken **C.char, outExpiry *C.int64_t, ou
 // on a core thread and must be fast.
 type RetryPredicate func(err *Error, attempt int) bool
 
-// RegisterRetryPredicate makes p callable by the core. The returned handle goes into the
-// options JSON (retry.predicate); call release once the operation using it has completed.
-func RegisterRetryPredicate(p RetryPredicate) (handle uint64, release func()) {
-	h := cgo.NewHandle(p)
-	return uint64(h), h.Delete
+// RegisterRetryPredicate makes p callable by the core and returns the ID to put in the
+// options JSON (retry.predicate). The core releases the ID after its last use; release is
+// for the caller's own error paths (before the options reached the core) and is idempotent.
+func RegisterRetryPredicate(p RetryPredicate) (id uint64, release func()) {
+	id = register(p)
+	return id, func() { unregister(id) }
+}
+
+// evalPredicate runs the predicate registered under id; unknown (released) IDs and panics
+// mean "do not retry".
+func evalPredicate(id uint64, err *Error, attempt int) (retry bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			retry = false
+		}
+	}()
+	v, ok := lookup(id)
+	if !ok || err == nil {
+		return false
+	}
+	return v.(RetryPredicate)(err, attempt)
 }
 
 //export rustcoreRetry
 func rustcoreRetry(predicate C.uintptr_t, st C.GcsStatus, attempt C.uint32_t) C.int32_t {
-	err := takeStatus(st)
-	p := cgo.Handle(predicate).Value().(RetryPredicate)
-	if err != nil && p(err, int(attempt)) {
+	if evalPredicate(uint64(predicate), takeStatus(st), int(attempt)) {
 		return 1
 	}
 	return 0

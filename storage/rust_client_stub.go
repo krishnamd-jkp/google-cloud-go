@@ -34,4 +34,6 @@ func newRustCoreClient(context.Context, string, *auth.Credentials, http.Header, 
 	return nil, errRustCoreNotCompiled
 }
 
+func rustUseGRPC(storageClient) {}
+
 func rustEngineStats() map[string]int64 { return map[string]int64{} }

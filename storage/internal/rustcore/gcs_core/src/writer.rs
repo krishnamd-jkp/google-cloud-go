@@ -38,6 +38,8 @@ const SYNC_COPY_MAX: usize = 1 << 20;
 const QUEUE_DEPTH: usize = 8;
 /// Default resumable chunk size when the caller does not set one.
 const DEFAULT_CHUNK: usize = 16 << 20;
+/// Smallest resumable chunk the service accepts; used for `ChunkSize == 0` streams.
+const MIN_CHUNK: usize = 256 << 10;
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
@@ -127,6 +129,7 @@ struct Plan {
     key: Option<KeyAes256>,
     checksums: Option<model::ObjectChecksums>,
     chunk_size: usize,
+    no_retry: bool,
     opts: CallOptions,
 }
 
@@ -137,11 +140,12 @@ async fn upload_task(plan: Plan, mut rx: mpsc::Receiver<WMsg>, result_tx: watch:
 }
 
 async fn run_upload(plan: Plan, rx: &mut mpsc::Receiver<WMsg>) -> UploadResult {
-    // Phase 1: content that ends within the first chunk is sent single-shot with an exact size.
+    // Phase 1: content of at most `chunk_size` bytes is sent single-shot with an exact size
+    // (the same rule as storage.Writer); collect until that is decided.
     let mut head = VecDeque::new();
     let mut head_len: usize = 0;
     let mut finished = false;
-    while head_len < plan.chunk_size {
+    while head_len <= plan.chunk_size {
         match rx.recv().await {
             Some(WMsg::Data(b)) => {
                 head_len += b.len();
@@ -164,7 +168,7 @@ async fn run_upload(plan: Plan, rx: &mut mpsc::Receiver<WMsg>) -> UploadResult {
     };
     let src = ChanSource { head, rx: live_rx, exact, finished };
 
-    let Plan { client, spec, key, checksums, chunk_size, opts } = plan;
+    let Plan { client, spec, key, checksums, chunk_size, no_retry, opts } = plan;
     let idempotent = opts.idempotent(policy::write_object(&spec));
     let o = spec.resource.unwrap_or_default();
     let mut req = client.storage.write_object(bucket_name(&o.bucket), o.name, src);
@@ -236,16 +240,22 @@ async fn run_upload(plan: Plan, rx: &mut mpsc::Receiver<WMsg>) -> UploadResult {
             req = req.with_known_md5_hash(c.md5_hash.to_vec());
         }
     }
+    // threshold = chunk_size + 1: an exact size <= chunk_size is uploaded single-shot.
     req = req
-        .with_resumable_upload_threshold(chunk_size)
+        .with_resumable_upload_threshold(chunk_size.saturating_add(1))
         .with_resumable_upload_buffer_size(chunk_size)
         .with_idempotency(idempotent);
-    let req = apply_data_opts!(req, &opts, &client);
+    let mut req = apply_data_opts!(req, &opts, &client);
+    if no_retry {
+        // ChunkSize == 0: a single, unbuffered stream that is never retried.
+        req = req.with_retry_policy(google_cloud_gax::retry_policy::NeverRetry);
+    }
     let obj = req.send_buffered().await.map_err(|e| Status::from_sdk(&e))?;
     to_json(&obj)
 }
 
-fn open_impl(client: &GcsClient, req: &[u8], opts: CallOptions) -> Result<*mut GcsWriter, Status> {
+fn open_impl(client: &GcsClient, req: &[u8], mut opts: CallOptions) -> Result<*mut GcsWriter, Status> {
+    opts.bind(client);
     let sw: StartWrite = serde_json::from_slice(req).map_err(|e| Status::invalid(format!("StartResumableWriteRequest: {e}")))?;
     let spec = sw.write_object_spec.ok_or_else(|| Status::invalid("writeObjectSpec is required"))?;
     if spec.appendable == Some(true) {
@@ -261,8 +271,13 @@ fn open_impl(client: &GcsClient, req: &[u8], opts: CallOptions) -> Result<*mut G
         }
         _ => None,
     };
-    let chunk_size = if opts.chunk_size > 0 { opts.chunk_size } else { DEFAULT_CHUNK };
-    let plan = Plan { client: client.clone(), spec, key, checksums: sw.object_checksums, chunk_size, opts };
+    // Absent: default chunk. 0: no chunking (minimum resumable buffer, no retries).
+    let (chunk_size, no_retry) = match opts.chunk_size {
+        None => (DEFAULT_CHUNK, false),
+        Some(0) => (MIN_CHUNK, true),
+        Some(n) => (n, false),
+    };
+    let plan = Plan { client: client.clone(), spec, key, checksums: sw.object_checksums, chunk_size, no_retry, opts };
     let (tx, rx) = mpsc::channel::<WMsg>(QUEUE_DEPTH);
     let (result_tx, result_rx) = watch::channel(None);
     let task = rt().spawn(upload_task(plan, rx, result_tx));
