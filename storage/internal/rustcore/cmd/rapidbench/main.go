@@ -20,6 +20,7 @@
 // The engine is chosen only by --engine=go|rust. The binary, this code and the runtime settings
 // are the same for both. Both engines use CloudPath and their default settings, so one gRPC
 // connection each: the Rust core follows the Go client's connection-pool setting.
+// --grpc-conns=N gives both engines N gRPC connections (option.WithGRPCConnectionPool).
 // --transport=bidi uses a gRPC client (BidiReadObject reads, appendable BidiWriteObject uploads),
 // --transport=json an HTTP client.
 //
@@ -92,6 +93,7 @@ type bench struct {
 	bucket, bucketLabel, project           string
 	json, cleanup                          bool
 	threads, durationS, warmupS, listItems int
+	grpcConns                              int
 	objectSize, openSize                   int64
 	rangeSize, writeChunk                  int
 	objectName, prefix, out                string
@@ -120,6 +122,7 @@ func main() {
 	fs.IntVar(&b.rangeSize, "range-size", 16*mib, "read: bytes per read")
 	fs.IntVar(&b.writeChunk, "write-chunk", 2*mib, "write: bytes per Write call")
 	fs.IntVar(&b.listItems, "list-items", 100, "list-objects, list-buckets: page size")
+	fs.IntVar(&b.grpcConns, "grpc-conns", 0, "bidi: gRPC connections on both engines (option.WithGRPCConnectionPool); 0 = the client default (1)")
 	fs.StringVar(&b.label, "label", "", "configuration name for the results (default <engine>-default)")
 	fs.StringVar(&b.objectName, "object", "", "source object name (default rapid/read-<size>)")
 	fs.StringVar(&b.prefix, "prefix", "", "write, list-objects: object name prefix")
@@ -193,6 +196,10 @@ func (b *bench) newClient(ctx context.Context) (*storage.Client, error) {
 	// Go's built-in gRPC client metrics are off: the Rust core has none, so leaving them on would
 	// add a cost to the Go runs only.
 	opts = append(opts, storage.WithDisabledClientMetrics())
+	if b.grpcConns > 0 {
+		// The Rust core opens the same number (with_grpc_subchannel_count).
+		opts = append(opts, option.WithGRPCConnectionPool(b.grpcConns))
+	}
 	if b.engine == "go" {
 		// BidiReadObject reads, the RPC the Rust SDK reads with (Go's default is ReadObject).
 		opts = append(opts, storage.WithGRPCBidiReads())
@@ -666,7 +673,11 @@ func (b *bench) report(name string, logs []*opLog, mStart, mEnd int64, wStart, w
 	s.put("bucket", b.bucketLabel)
 	s.put("threads", b.threads)
 	s.put("clients", 1)
-	s.put("grpc_connections", "client default (1)")
+	if b.grpcConns > 0 && !b.json {
+		s.put("grpc_connections", b.grpcConns)
+	} else {
+		s.put("grpc_connections", "client default (1)")
+	}
 	s.put("params", params)
 	s.put("window_start", wStart.UTC().Format(timeLayout))
 	s.put("window_end", wEnd.UTC().Format(timeLayout))
