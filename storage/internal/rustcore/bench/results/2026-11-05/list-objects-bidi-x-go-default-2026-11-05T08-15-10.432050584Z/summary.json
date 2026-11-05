@@ -1,0 +1,55 @@
+{
+  "op": "LIST_OBJECTS",
+  "engine": "go",
+  "transport": "bidi",
+  "label": "go-default",
+  "bucket": "regional",
+  "threads": 1,
+  "clients": 1,
+  "grpc_connections": "client default (1)",
+  "params": {
+    "network": {
+      "nic_rx_Gbps": 0.003,
+      "nic_tx_Gbps": 0.001,
+      "tcp_established_443_end": 1,
+      "tcp_established_443_mid": 1,
+      "tcp_established_443_start": 1
+    },
+    "page_size": 100,
+    "prefix": "rapid/list-100/"
+  },
+  "window_start": "2026-11-05T08:15:20.671036Z",
+  "window_end": "2026-11-05T08:18:20.672062Z",
+  "measured_seconds": 180.001,
+  "ops": 3070,
+  "errors": 0,
+  "first_error": null,
+  "latency_ms_p50": 57.768,
+  "latency_ms_p90": 64.045,
+  "latency_ms_p99": 76.192,
+  "latency_ms_p999": 96.645,
+  "latency_ms_max": 238.731,
+  "latency_ms_mean": 58.631,
+  "ops_per_sec": 17.055,
+  "items_per_sec": 1705.546,
+  "process_cpu_percent_of_all_cores": 0.013,
+  "process_peak_rss_mib": 53.121,
+  "available_processors": 192,
+  "go_version": "go1.26.8",
+  "gce_zone": "us-central1-f",
+  "gce_machine_type": "c4-standard-192",
+  "cloud_monitoring": {
+    "window_start": "2026-11-05T08:15:20Z",
+    "window_end": "2026-11-05T08:18:20Z",
+    "cpu_utilization_percent": {
+      "samples": 3,
+      "mean": 0.08,
+      "peak": 0.09
+    },
+    "memory_percent_used": {
+      "samples": 3,
+      "mean": 0.7,
+      "peak": 0.7
+    }
+  }
+}

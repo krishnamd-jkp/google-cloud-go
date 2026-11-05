@@ -1,0 +1,59 @@
+{
+  "op": "WRITE_JSON",
+  "engine": "rust",
+  "transport": "json",
+  "label": "rust-default",
+  "bucket": "regional",
+  "threads": 48,
+  "clients": 1,
+  "grpc_connections": "client default (1)",
+  "params": {
+    "network": {
+      "nic_rx_Gbps": 0.067,
+      "nic_tx_Gbps": 12.609,
+      "tcp_established_443_end": 48,
+      "tcp_established_443_mid": 48,
+      "tcp_established_443_start": 48
+    },
+    "object_size": 200000000,
+    "prefix": "rapid/jsonwrite-rust-default/",
+    "write_chunk": 2097152
+  },
+  "window_start": "2026-11-05T08:02:00.019485Z",
+  "window_end": "2026-11-05T08:07:00.044489Z",
+  "measured_seconds": 300.025,
+  "ops": 2345,
+  "errors": 0,
+  "first_error": null,
+  "latency_ms_p50": 6019.307,
+  "latency_ms_p90": 6546.234,
+  "latency_ms_p99": 7194.809,
+  "latency_ms_p999": 9046.749,
+  "latency_ms_max": 22100.536,
+  "latency_ms_mean": 6114.038,
+  "ops_per_sec": 7.816,
+  "bytes": 471386773504,
+  "throughput_MBps": 1571.158,
+  "throughput_Gbps": 12.569,
+  "completed_objects_Gbps": 12.506,
+  "process_cpu_percent_of_all_cores": 0.528,
+  "process_peak_rss_mib": 10342.867,
+  "available_processors": 192,
+  "go_version": "go1.26.8",
+  "gce_zone": "us-central1-f",
+  "gce_machine_type": "c4-standard-192",
+  "cloud_monitoring": {
+    "window_start": "2026-11-05T08:02:00Z",
+    "window_end": "2026-11-05T08:07:00Z",
+    "cpu_utilization_percent": {
+      "samples": 5,
+      "mean": 0.84,
+      "peak": 0.88
+    },
+    "memory_percent_used": {
+      "samples": 5,
+      "mean": 1.76,
+      "peak": 2.09
+    }
+  }
+}

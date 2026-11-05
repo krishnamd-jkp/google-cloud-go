@@ -1,0 +1,60 @@
+{
+  "op": "READ50X2X4_JSON_CONCURRENT",
+  "engine": "go",
+  "transport": "json",
+  "label": "go-default",
+  "bucket": "regional",
+  "threads": 1,
+  "clients": 1,
+  "grpc_connections": "client default (1)",
+  "params": {
+    "mode": "concurrent",
+    "network": {
+      "nic_rx_Gbps": 1.881,
+      "nic_tx_Gbps": 0.021,
+      "tcp_established_443_end": 1,
+      "tcp_established_443_mid": 1,
+      "tcp_established_443_start": 1
+    },
+    "object": "rapid/read-209715200",
+    "range_size": 2097152,
+    "ranges": 50,
+    "stride": 4194304
+  },
+  "window_start": "2026-11-05T06:48:29.199005Z",
+  "window_end": "2026-11-05T06:51:29.199161Z",
+  "measured_seconds": 180,
+  "ops": 381,
+  "errors": 0,
+  "first_error": null,
+  "latency_ms_p50": 444.854,
+  "latency_ms_p90": 569.967,
+  "latency_ms_p99": 766.778,
+  "latency_ms_p999": 1939.709,
+  "latency_ms_max": 1939.709,
+  "latency_ms_mean": 472.543,
+  "ops_per_sec": 2.117,
+  "bytes": 39950745600,
+  "throughput_MBps": 221.948,
+  "throughput_Gbps": 1.776,
+  "process_cpu_percent_of_all_cores": 0.51,
+  "process_peak_rss_mib": 272.957,
+  "available_processors": 192,
+  "go_version": "go1.26.8",
+  "gce_zone": "us-central1-f",
+  "gce_machine_type": "c4-standard-192",
+  "cloud_monitoring": {
+    "window_start": "2026-11-05T06:48:29Z",
+    "window_end": "2026-11-05T06:51:29Z",
+    "cpu_utilization_percent": {
+      "samples": 3,
+      "mean": 0.78,
+      "peak": 0.88
+    },
+    "memory_percent_used": {
+      "samples": 3,
+      "mean": 0.75,
+      "peak": 0.75
+    }
+  }
+}

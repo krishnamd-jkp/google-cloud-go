@@ -1,0 +1,228 @@
+results: ~/rapid-results/20261105T061443Z
+== prepare
+== 06:14:51 go-default --workload=open --transport=bidi --bucket-label=regional
+      "tcp_established_443_mid": 1,
+  "ops": 498,
+  "errors": 0,
+  "latency_ms_p50": 333.58,
+  "latency_ms_p99": 502.245,
+  "items_per_sec": 2.767,
+results: open-bidi-104857600-go-default-2026-11-05T06-14-51.500787888Z
+== 06:19:01 rust-default --workload=open --transport=bidi --bucket-label=regional
+      "tcp_established_443_mid": 2,
+  "ops": 1216,
+  "errors": 0,
+  "latency_ms_p50": 129.219,
+  "latency_ms_p99": 295.451,
+  "items_per_sec": 6.755,
+results: open-bidi-104857600-rust-default-2026-11-05T06-19-01.798213464Z
+== 06:23:12 rust-default --workload=open --transport=bidi --open-size=102400 --bucket-label=regional
+      "tcp_established_443_mid": 2,
+  "ops": 2496,
+  "errors": 0,
+  "latency_ms_p50": 70.16,
+  "latency_ms_p99": 121.78,
+  "items_per_sec": 13.865,
+results: open-bidi-102400-rust-default-2026-11-05T06-23-12.294556769Z
+== 06:27:22 go-default --workload=open --transport=bidi --open-size=102400 --bucket-label=regional
+      "tcp_established_443_mid": 1,
+  "ops": 2515,
+  "errors": 0,
+  "latency_ms_p50": 69.621,
+  "latency_ms_p99": 117.716,
+  "items_per_sec": 13.972,
+results: open-bidi-102400-go-default-2026-11-05T06-27-22.678071466Z
+== 06:31:32 go-default --workload=read50x2x4 --transport=bidi --mode=concurrent --bucket-label=regional
+      "tcp_established_443_mid": 1,
+  "ops": 244,
+  "errors": 0,
+  "latency_ms_p50": 725.451,
+  "latency_ms_p99": 926.213,
+  "throughput_MBps": 142.14,
+results: read50x2x4-bidi-concurrent-go-default-2026-11-05T06-31-32.971223996Z
+== 06:35:43 rust-default --workload=read50x2x4 --transport=bidi --mode=concurrent --bucket-label=regional
+      "tcp_established_443_mid": 2,
+  "ops": 312,
+  "errors": 0,
+  "latency_ms_p50": 571.824,
+  "latency_ms_p99": 716.497,
+  "throughput_MBps": 181.663,
+results: read50x2x4-bidi-concurrent-rust-default-2026-11-05T06-35-43.909023509Z
+== 06:39:54 rust-default --workload=read50x2x4 --transport=bidi --mode=serial --bucket-label=regional
+      "tcp_established_443_mid": 2,
+  "ops": 30,
+  "errors": 0,
+  "latency_ms_p50": 5755.094,
+  "latency_ms_p99": 13728.503,
+  "throughput_MBps": 17.47,
+results: read50x2x4-bidi-serial-rust-default-2026-11-05T06-39-54.772212363Z
+== 06:44:08 go-default --workload=read50x2x4 --transport=bidi --mode=serial --bucket-label=regional
+      "tcp_established_443_mid": 1,
+  "ops": 29,
+  "errors": 0,
+  "latency_ms_p50": 5731.648,
+  "latency_ms_p99": 13463.46,
+  "throughput_MBps": 16.894,
+results: read50x2x4-bidi-serial-go-default-2026-11-05T06-44-08.610348389Z
+== 06:48:19 go-default --workload=read50x2x4 --transport=json --mode=concurrent --bucket-label=regional
+      "tcp_established_443_mid": 1,
+  "ops": 381,
+  "errors": 0,
+  "latency_ms_p50": 444.854,
+  "latency_ms_p99": 766.778,
+  "throughput_MBps": 221.948,
+results: read50x2x4-json-concurrent-go-default-2026-11-05T06-48-19.093319985Z
+== 06:52:29 rust-default --workload=read50x2x4 --transport=json --mode=concurrent --bucket-label=regional
+      "tcp_established_443_mid": 51,
+  "ops": 770,
+  "errors": 0,
+  "latency_ms_p50": 183.386,
+  "latency_ms_p99": 658.092,
+  "throughput_MBps": 448.489,
+results: read50x2x4-json-concurrent-rust-default-2026-11-05T06-52-29.464426622Z
+== 06:56:39 rust-default --workload=read50x2x4 --transport=json --mode=serial --bucket-label=regional
+      "tcp_established_443_mid": 2,
+  "ops": 24,
+  "errors": 0,
+  "latency_ms_p50": 7149.913,
+  "latency_ms_p99": 15660.886,
+  "throughput_MBps": 13.977,
+results: read50x2x4-json-serial-rust-default-2026-11-05T06-56-39.898838122Z
+== 07:00:55 go-default --workload=read50x2x4 --transport=json --mode=serial --bucket-label=regional
+      "tcp_established_443_mid": 1,
+  "ops": 23,
+  "errors": 0,
+  "latency_ms_p50": 7160.151,
+  "latency_ms_p99": 16178.072,
+  "throughput_MBps": 13.398,
+results: read50x2x4-json-serial-go-default-2026-11-05T07-00-55.256088322Z
+== 07:05:06 go-default --workload=random8k --transport=bidi --bucket-label=regional
+      "tcp_established_443_mid": 1,
+  "ops": 2872,
+  "errors": 0,
+  "latency_ms_p50": 60.122,
+  "latency_ms_p99": 111.569,
+  "throughput_MBps": 0.131,
+results: random8k-bidi-x-go-default-2026-11-05T07-05-06.525536133Z
+== 07:09:16 rust-default --workload=random8k --transport=bidi --bucket-label=regional
+      "tcp_established_443_mid": 2,
+  "ops": 2903,
+  "errors": 0,
+  "latency_ms_p50": 60.348,
+  "latency_ms_p99": 101.531,
+  "throughput_MBps": 0.132,
+results: random8k-bidi-x-rust-default-2026-11-05T07-09-16.834919369Z
+== 07:13:27 rust-default --workload=random8k --transport=json --bucket-label=regional
+      "tcp_established_443_mid": 2,
+  "ops": 2960,
+  "errors": 0,
+  "latency_ms_p50": 58.907,
+  "latency_ms_p99": 97.626,
+  "throughput_MBps": 0.135,
+results: random8k-json-x-rust-default-2026-11-05T07-13-27.341453341Z
+== 07:17:37 go-default --workload=random8k --transport=json --bucket-label=regional
+      "tcp_established_443_mid": 1,
+  "ops": 3031,
+  "errors": 0,
+  "latency_ms_p50": 57.591,
+  "latency_ms_p99": 92.783,
+  "throughput_MBps": 0.138,
+results: random8k-json-x-go-default-2026-11-05T07-17-37.72986533Z
+== 07:21:47 go-default --workload=read --transport=bidi --bucket-label=regional
+      "tcp_established_443_mid": 1,
+  "ops": 3600,
+  "errors": 0,
+  "latency_ms_p50": 3952.068,
+  "latency_ms_p99": 5029.332,
+  "throughput_MBps": 201.326,
+results: read-bidi-x-go-default-2026-11-05T07-21-47.884581985Z
+== 07:28:20 rust-default --workload=read --transport=bidi --bucket-label=regional
+      "tcp_established_443_mid": 2,
+  "ops": 5304,
+  "errors": 0,
+  "latency_ms_p50": 2692.858,
+  "latency_ms_p99": 3917.675,
+  "throughput_MBps": 296.595,
+results: read-bidi-x-rust-default-2026-11-05T07-28-20.658550737Z
+== 07:34:52 rust-default --workload=read --transport=json --bucket-label=regional
+      "tcp_established_443_mid": 49,
+  "ops": 52074,
+  "errors": 0,
+  "latency_ms_p50": 265.873,
+  "latency_ms_p99": 478.103,
+  "throughput_MBps": 2912.189,
+results: read-json-x-rust-default-2026-11-05T07-34-52.659268848Z
+== 07:41:23 go-default --workload=read --transport=json --bucket-label=regional
+      "tcp_established_443_mid": 1,
+  "ops": 5391,
+  "errors": 0,
+  "latency_ms_p50": 2637.776,
+  "latency_ms_p99": 3389.045,
+  "throughput_MBps": 301.487,
+results: read-json-x-go-default-2026-11-05T07-41-23.383342953Z
+== 07:47:54 go-default --workload=write --transport=bidi --bucket-label=zonal
+      "tcp_established_443_mid": 1,
+  "ops": 528,
+  "errors": 0,
+  "latency_ms_p50": 26482.836,
+  "latency_ms_p99": 28942.677,
+  "throughput_MBps": 360.053,
+results: write-bidi-x-go-default-2026-11-05T07-47-54.315621936Z
+== 07:54:46 rust-default --workload=write --transport=bidi --bucket-label=zonal
+      "tcp_established_443_mid": 1,
+  "ops": 563,
+  "errors": 0,
+  "latency_ms_p50": 27681.362,
+  "latency_ms_p99": 31421.999,
+  "throughput_MBps": 379.039,
+results: write-bidi-x-rust-default-2026-11-05T07-54-46.67787535Z
+== 08:01:29 rust-default --workload=write --transport=json --bucket-label=regional
+      "tcp_established_443_mid": 48,
+  "ops": 2345,
+  "errors": 0,
+  "latency_ms_p50": 6019.307,
+  "latency_ms_p99": 7194.809,
+  "throughput_MBps": 1571.158,
+results: write-json-x-rust-default-2026-11-05T08-01-29.896878334Z
+== 08:08:11 go-default --workload=write --transport=json --bucket-label=regional
+      "tcp_established_443_mid": 1,
+  "ops": 432,
+  "errors": 0,
+  "latency_ms_p50": 34869.521,
+  "latency_ms_p99": 43329.642,
+  "throughput_MBps": 268.65,
+results: write-json-x-go-default-2026-11-05T08-08-11.501525115Z
+== 08:15:10 go-default --workload=list-objects --transport=bidi --bucket-label=regional
+      "tcp_established_443_mid": 1,
+  "ops": 3070,
+  "errors": 0,
+  "latency_ms_p50": 57.768,
+  "latency_ms_p99": 76.192,
+  "items_per_sec": 1705.546,
+results: list-objects-bidi-x-go-default-2026-11-05T08-15-10.432050584Z
+== 08:19:20 rust-default --workload=list-objects --transport=bidi --bucket-label=regional
+      "tcp_established_443_mid": 1,
+  "ops": 3036,
+  "errors": 0,
+  "latency_ms_p50": 58.393,
+  "latency_ms_p99": 76.979,
+  "items_per_sec": 1686.658,
+results: list-objects-bidi-x-rust-default-2026-11-05T08-19-20.750827379Z
+== 08:23:31 rust-default --workload=list-buckets --transport=bidi
+      "tcp_established_443_mid": 1,
+  "ops": 198,
+  "errors": 0,
+  "latency_ms_p50": 910.843,
+  "latency_ms_p99": 999.652,
+  "items_per_sec": 109.997,
+results: list-buckets-bidi-x-rust-default-2026-11-05T08-23-31.11255918Z
+== 08:27:41 go-default --workload=list-buckets --transport=bidi
+      "tcp_established_443_mid": 1,
+  "ops": 198,
+  "errors": 0,
+  "latency_ms_p50": 910.958,
+  "latency_ms_p99": 967.507,
+  "items_per_sec": 110,
+results: list-buckets-bidi-x-go-default-2026-11-05T08-27-41.947340841Z
+== waiting 240 s for Cloud Monitoring
+done: ~/rapid-results/20261105T061443Z/summary.md
