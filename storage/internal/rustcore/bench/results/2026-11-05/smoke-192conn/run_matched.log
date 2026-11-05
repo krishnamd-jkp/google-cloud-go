@@ -1,0 +1,41 @@
+results: ~/rapid-results/20261105T132226Z-matched-192conn (gRPC connections on both engines: 192)
+== smoke (45 s per run)
+== 13:22:26 go-192conn --workload=read --transport=bidi --bucket-label=regional --duration=45 --warmup=5
+  "grpc_connections": 192,
+      "tcp_established_443_mid": 192,
+  "ops": 3015,
+  "errors": 0,
+  "latency_ms_p50": 706.36,
+  "latency_ms_p99": 839.711,
+  "throughput_MBps": 1124.072,
+results: read-bidi-x-go-192conn-2026-11-05T13-22-26.794885721Z
+== 13:23:23 rust-192conn --workload=read --transport=bidi --bucket-label=regional --duration=45 --warmup=5
+  "grpc_connections": 192,
+      "tcp_established_443_mid": 193,
+  "ops": 2971,
+  "errors": 0,
+  "latency_ms_p50": 703.622,
+  "latency_ms_p99": 966.772,
+  "throughput_MBps": 1107.667,
+results: read-bidi-x-rust-192conn-2026-11-05T13-23-23.058328372Z
+== 13:24:19 go-192conn --workload=write --transport=bidi --bucket-label=zonal --duration=45 --warmup=5
+  "grpc_connections": 192,
+      "tcp_established_443_mid": 192,
+  "ops": 1337,
+  "errors": 1,
+  "latency_ms_p50": 1596.393,
+  "latency_ms_p99": 2083.599,
+  "throughput_MBps": 5900.036,
+results: write-bidi-x-go-192conn-2026-11-05T13-24-19.232586662Z
+rapidbench: 13:24:47.169457 worker 11: rpc error: code = Internal desc = We encountered an internal error. Please try again.
+== 13:25:20 rust-192conn --workload=write --transport=bidi --bucket-label=zonal --duration=45 --warmup=5
+  "grpc_connections": 192,
+      "tcp_established_443_mid": 192,
+  "ops": 1240,
+  "errors": 0,
+  "latency_ms_p50": 1718.514,
+  "latency_ms_p99": 3244.378,
+  "throughput_MBps": 5521.39,
+results: write-bidi-x-rust-192conn-2026-11-05T13-25-20.65841904Z
+go-192conn BIDI_APPENDABLE_WRITE: 1 errors, 1337 ops
+smoke test failed (1 runs); stopping

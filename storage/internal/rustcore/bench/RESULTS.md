@@ -1,10 +1,32 @@
 # Go PoC benchmark results: cloud.google.com/go/storage on Go vs on the Rust SDK
 
-Run on 2026-11-05, 06:14–08:31 UTC. One pass of 28 runs, **0 errors in every run**.
+Run on 2026-11-05, in two passes:
+- **The main pass:** 28 runs, each engine on its default settings, 06:14–08:31 UTC, **0 errors in
+  every run**.
+- **A pass with 192 gRPC connections on both engines:** workloads 4 and 5 over Bidi, 4 runs,
+  13:29–13:54 UTC. It compares the engines without the difference in connection counts. These rows
+  are marked *192 connections* below.
 
 This report follows the format of the Java PoC's report
 ([java-storage/rust-poc-benchmark/RESULTS.md](https://github.com/Dhriti07/google-cloud-java/blob/ffi-java/java-storage/rust-poc-benchmark/RESULTS.md)),
 so the two can be compared side by side. Earlier Go runs are listed in [README.md](README.md#results).
+
+## Summary
+
+- **The one-worker workloads (1, 2, 3 and 6) are the same within a few percent, with two
+  exceptions:** Open on a 100 MiB object, where Rust gets the first response faster (129 vs 334 ms
+  p50), and the concurrent Read50x2x4, where Rust is 1.3× faster over Bidi and 2× faster over JSON
+  (51 connections against Go's 1).
+- **With 48 parallel reads or writes on each engine's defaults, the connection counts decide most
+  of the result.** Over JSON, Rust's ~48 HTTP/1.1 connections moved 6–10× more than Go's single
+  HTTP/2 connection. Over Bidi, with one gRPC connection each, Rust read 47% more (not confirmed by
+  the smoke test) and wrote about the same.
+- **With 192 gRPC connections on both engines, Bidi reads are even** (9.6 vs 9.2 Gbps), and Rust
+  wrote 29% more (43.7 vs 33.8 Gbps). Both are from one round each.
+- **Rust's peak memory is higher wherever data moves in bulk:** for appendable writes, 21.5 vs
+  2.8 GiB process RSS, mainly because the Rust SDK queues up to 200 MiB per upload stream.
+
+Details are in [What the numbers show](#what-the-numbers-show) and [Caveats](#caveats).
 
 ## What was compared
 
@@ -23,8 +45,9 @@ Storage SDK 1.20 through cgo (the prototype).
 | ListObjects (gRPC) | `BucketHandle.Objects`, one page through `iterator.NewPager` | regional |
 | ListBuckets (gRPC) | `Client.Buckets`, one page through `iterator.NewPager` | project |
 
-Both engines use their **default settings**, which is what a user gets out of the box. Both use
-CloudPath. The defaults decide the connection counts, shown in the TCP column:
+Both engines use their **default settings**, which is what a user gets out of the box; the one
+exception is the rows marked *192 connections*. Both use CloudPath. The defaults decide the
+connection counts, shown in the TCP column:
 
 - **gRPC: one connection on both engines.** The Go client defaults to one, and the PoC's Rust core
   follows the Go client's `option.WithGRPCConnectionPool` setting (default 1) instead of the Rust
@@ -33,6 +56,11 @@ CloudPath. The defaults decide the connection counts, shown in the TCP column:
 - **JSON: one connection for Go, one per request for Rust.** Go's HTTP client multiplexes all
   requests on one HTTP/2 connection. The Rust SDK's JSON transport is HTTP/1.1 only, so it opens one
   connection per request in flight: 48 to 51 with 48 or 50 requests at a time.
+- **Bidi with 192 connections (workloads 4 and 5 only).** This compares the engines without the
+  connection difference. The Go client is given `option.WithGRPCConnectionPool(192)`, and the PoC's
+  Rust core follows it (`with_grpc_subchannel_count`). 192 is the Rust SDK's own default on this VM,
+  one connection per vCPU. So the 48-worker Bidi results cover both defaults: Go's (1 on both
+  engines) and the Rust SDK's (192 on both).
 
 ## Environment
 
@@ -41,10 +69,10 @@ CloudPath. The defaults decide the connection counts, shown in the TCP column:
 | VM | `c4-standard-192` (192 vCPU, 720 GB), Ubuntu 24.04 LTS, `us-central1-f`, gVNIC, Tier_1 networking, Ops Agent |
 | Buckets | a regional bucket (`us-west1`) and a Rapid zonal bucket (`us-west1-a`). The VM and the buckets are in different regions on purpose. |
 | Project | not named here |
-| Code | branch `go-ffi` at `a086f90aec` on github.com/krishnamd-jkp/google-cloud-go; `cloud.google.com/go/storage` at upstream `867fe707ef` plus the PoC; gRPC-Go 1.84.0; Rust `google-cloud-storage` 1.20.0 |
-| Binary | `rapidbench` ([source](../cmd/rapidbench/main.go)), built with `-tags gcsrust` from `a086f90aec`, sha256 `540b8a1f3cae90c1f6c1fed25d06604a4b95fcbd9fc6c8c61e4e217bb6c278e7` |
+| Code | branch `go-ffi` at `a086f90aec` on github.com/krishnamd-jkp/google-cloud-go; `cloud.google.com/go/storage` at upstream `867fe707ef` plus the PoC; gRPC-Go 1.84.0; Rust `google-cloud-storage` 1.20.0. The *192 connections* runs: `9cc86eaee1`, which adds `rapidbench --grpc-conns` and `run_matched.sh`; the PoC itself is unchanged. |
+| Binary | `rapidbench` ([source](../cmd/rapidbench/main.go)), built with `-tags gcsrust` from `a086f90aec`, sha256 `540b8a1f3cae90c1f6c1fed25d06604a4b95fcbd9fc6c8c61e4e217bb6c278e7`. The *192 connections* runs used one built from `9cc86eaee1` with the same Rust core library, sha256 `e4fa5eb5892b52b5da197abfac78e5a3bd34395983bab2bc84f0b2105783f6a2`. |
 | Runtime | Go 1.26.8; GOMAXPROCS and GOGC at their defaults (192 and 100); identical for both engines |
-| Command | `REGIONAL=… ZONAL=… PROJECT=… bash storage/internal/rustcore/bench/rapid/run_all.sh` ([scripts](rapid/)), after a 45 s smoke test of every run (the 100 KiB Open was added after it) |
+| Command | `REGIONAL=… ZONAL=… PROJECT=… bash storage/internal/rustcore/bench/rapid/run_all.sh` ([scripts](rapid/)), after a 45 s smoke test of every run (the 100 KiB Open was added after it). *192 connections*: `REGIONAL=… ZONAL=… CONNS=192 bash …/rapid/run_matched.sh`, after a 45 s smoke test of the 4 runs. The charts combine both: `python3 rapid/charts.py <main pass> <its latency dir> <its monitoring.csv> <charts dir> <192 pass> <its latency dir>`. |
 
 ## How each metric is measured
 
@@ -59,14 +87,16 @@ Measured window per run:
 - Workloads 1, 2, 3, 6: 3 min, 1 goroutine, one operation at a time, after a 10 s warm-up.
 - Workloads 4, 5: 5 min, 48 goroutines in parallel, after a 30 s warm-up.
 - 60 s cooldown between runs, one run at a time on the VM. The engine that goes first alternates by
-  workload.
+  workload. The *192 connections* runs are timed the same way and ran later the same day, on the
+  same VM and buckets, Go and Rust back to back for each workload.
 
 ## Results
 
 ### Overview charts
 
 All charts compare Go (blue, current SDK) with Rust (orange, prototype). The data behind them is
-in [`results/2026-11-05/`](results/2026-11-05/).
+in [`results/2026-11-05/`](results/2026-11-05/). Rows marked *192c* are the *192 connections* runs.
+The whole-run timeline covers the main pass only.
 
 #### Latency
 
@@ -92,8 +122,9 @@ SDK) on the same workload.
 
 ![Operations per second](results/2026-11-05/charts/throughput_ops.svg)
 
-Over time, for the 48-worker workloads. The write panels count completed 200 MB objects per second,
-so they look spikier than the window throughput in the tables.
+Over time, for the 48-worker workloads; the bottom row is Bidi with 192 connections each. The write
+panels count completed 200 MB objects per second, so with one connection they look spikier than the
+window throughput in the tables.
 
 ![Throughput over time](results/2026-11-05/charts/throughput_over_time.svg)
 
@@ -113,8 +144,8 @@ and reuse memory differently. Measured with `agent.googleapis.com/memory/percent
 
 #### CPU and memory across the whole run
 
-Each shaded band is the measured window of one run: blue for Go, orange for Rust, and the number on
-top is the workload.
+Each shaded band is the measured window of one run of the main pass: blue for Go, orange for Rust,
+and the number on top is the workload.
 
 ![CPU and memory timeline](results/2026-11-05/charts/cpu_memory_timeline.svg)
 
@@ -172,6 +203,8 @@ PoC doesn't have yet.
 |---|---|--:|--:|--:|--:|--:|--:|--:|--:|
 | Bidi | Go | 3,952.1 | 4,668.6 | 5,029.3 | 201.3 (1.61) | 0.73 (0.81) | 0.90 | 1 | 1.71 |
 | Bidi | Rust | 2,692.9 | 3,007.5 | 3,917.7 | 296.6 (2.37) | 0.71 (0.84) | 0.97 | 2 | 2.51 |
+| Bidi, *192 connections* | Go | 685.3 | 731.8 | 935.3 | 1,199.7 (9.60) | 2.95 (3.12) | 1.01 | 192 | 10.20 |
+| Bidi, *192 connections* | Rust | 678.2 | 750.0 | 3,458.6 | 1,145.0 (9.16) | 2.26 (2.29) | 1.02 | 193 | 9.72 |
 | JSON | Go | 2,637.8 | 3,033.6 | 3,389.0 | 301.5 (2.41) | 1.15 (1.33) | 0.89 | 1 | 2.57 |
 | JSON | Rust | 265.9 | 312.9 | 478.1 | 2,912.2 (23.30) | 4.91 (5.32) | 0.91 | 49 | 24.68 |
 
@@ -181,8 +214,13 @@ PoC doesn't have yet.
 |---|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|
 | Bidi appendable (zonal) | Go | 26,482.8 | 28,510.9 | 28,942.7 | 360.1 (2.88) | 1.76 | 0.64 (0.68) | 1.16 | 1 | 2.92 |
 | Bidi appendable (zonal) | Rust | 27,681.4 | 28,900.2 | 31,422.0 | 379.0 (3.03) | 1.88 | 0.42 (0.44) | 3.64 | 1 | 2.99 |
+| Bidi appendable (zonal), *192 connections* | Go | 1,551.3 | 1,782.9 | 2,820.6 | 4,223.8 (33.79) | 21.11 | 4.23 (5.59) | 1.11 | 192 | 35.17 |
+| Bidi appendable (zonal), *192 connections* | Rust | 1,715.7 | 2,272.2 | 3,337.1 | 5,460.7 (43.69) | 27.31 | 4.80 (5.00) | 3.41 | 192 | 43.95 |
 | JSON (regional) | Go | 34,869.5 | 42,072.6 | 43,329.6 | 268.6 (2.15) | 1.44 | 1.03 (1.13) | 1.00 | 1 | 2.17 |
 | JSON (regional) | Rust | 6,019.3 | 6,546.2 | 7,194.8 | 1,571.2 (12.57) | 7.82 | 0.84 (0.88) | 2.09 | 48 | 12.61 |
+
+The *192 connections* rows ran at 13:29–13:54 UTC. The Go write run had one transient `502 Bad
+Gateway` from the service (1 of 6,333 uploads; see the caveats).
 
 #### 6. List Objects and List Buckets, 100 items per page
 
@@ -217,16 +255,18 @@ to 16 MiB per writer.
   - Bidi, one gRPC connection on both engines: Rust moved more on reads (2.37 vs 1.61 Gbps,
     +47%) and about the same on writes (3.03 vs 2.88 Gbps). One shared connection carries all 48
     streams, so every worker is slow: a 200 MB upload takes about 27 s on both.
+  - **Bidi with 192 connections on both engines:**
+    - Reads are even: 9.60 vs 9.16 Gbps, p50 685 vs 678 ms. Rust used 23% less CPU (2.26% vs
+      2.95% of the VM), but its p99 was longer (3.5 vs 0.9 s).
+    - On writes Rust moved 29% more: 43.7 vs 33.8 Gbps, at a similar CPU cost per Gbps.
+    - Both engines read 4–6× and write 12–14× faster than with one connection.
+    - An earlier run on another VM, with 48 connections on both engines, was also even on Bidi
+      throughput: [results/2026-11-04/REPORT.md](results/2026-11-04/REPORT.md).
   - JSON: Go's single HTTP/2 connection against Rust's 48–49 HTTP/1.1 connections. Rust moved far
     more: reads 23.3 vs 2.4 Gbps, writes 12.6 vs 2.2 Gbps. This is the HTTP/2 vs HTTP/1.1 default,
     not per-connection speed.
   - CPU follows the throughput: JSON reads at 23 Gbps used 4.9% of the VM (about 9 vCPUs). Bidi
     appendable writes used less CPU on Rust (0.42% vs 0.64%) at slightly higher throughput.
-- **Connections matched (the 2026-11-04 run, for context only):** with 48 gRPC connections on both
-  engines, Bidi throughput was the same: reads about 9.8–9.9 Gbps and appendable writes about 37
-  Gbps, with 22% less CPU per GB on Rust for reads. That run was on another VM (Debian 13,
-  `us-central1-b`, default network tier) with `rustbench`, so it is context, not part of this
-  result: [results/2026-11-04/REPORT.md](results/2026-11-04/REPORT.md).
 - **Single operations (1, 2, 3, 6):**
   - Open on the 100 KiB object, Random8K, serialized Read50x2x4 and both lists are the same within a
     few percent.
@@ -236,9 +276,10 @@ to 16 MiB per writer.
     572 vs 726 ms); over JSON Rust is 2× faster with 51 connections against Go's 1.
 - **Peak memory: Rust is higher wherever data moves in bulk.**
   - Bidi appendable writes: 3.64% vs 1.16% of the VM, about 26 vs 8 GB (process peak RSS 21.5 vs
-    2.8 GiB). The Rust SDK queues up to 100 messages of 2 MiB per upload stream before it slows the
-    writer down (`MAX_QUEUED_REQUESTS` in its `bidi_write/connector.rs`), so each 200 MB upload can
-    sit in memory almost whole, and glibc keeps freed memory in per-thread pools.
+    2.8 GiB). With 192 connections it was 3.41% vs 1.11% (18.3 vs 2.7 GiB). The Rust SDK queues up
+    to 100 messages of 2 MiB per upload stream before it slows the writer down
+    (`MAX_QUEUED_REQUESTS` in its `bidi_write/connector.rs`), so each 200 MB upload can sit in
+    memory almost whole, and glibc keeps freed memory in per-thread pools.
   - JSON writes: 2.09% vs 1.00% (process peak RSS 10.1 vs 2.0 GiB), not investigated yet.
   - Bidi reads: 0.97% vs 0.90%. Single operations stay near the idle level (about 0.69%).
 
@@ -251,10 +292,18 @@ to 16 MiB per writer.
    - **Bidi reads at 48 workers did not:** the smoke test had Go at 214 and Rust at 179 MB/s, the
      reverse of the 5-minute result. One connection carrying 48 streams is sensitive to network
      conditions, so treat that gap as uncertain.
+   - **The *192 connections* runs are one round too.** Go's write rate fell from about 5.5 to
+     3.8 GB/s during its window (see the throughput-over-time chart), and its 45 s smoke test
+     averaged 5,900 MB/s. Rust held about 5.5 GB/s in both. Treat the 192-connection write gap as
+     uncertain until more rounds are run.
+   - **Errors in the *192 connections* runs:** one transient `502 Bad Gateway` in Go's write run
+     (1 of 6,333 uploads), and one `Internal` error in Go's write smoke test. Both came from the
+     service, and every other run had 0 errors.
 2. **Defaults differ by design.** Connection counts are each engine's default (the TCP column), so
-   4 and 5 compare what users get, not equal connection counts. The Java report's Rust engine kept
-   the Rust SDK's default (up to one connection per vCPU); the Go PoC's Rust core follows the Go
-   client's setting. Compare the two reports' 48-worker rows with the TCP column in mind.
+   4 and 5 compare what users get, not equal connection counts. The *192 connections* rows remove
+   that difference for 4 and 5 over Bidi. The Java report's Rust engine kept the Rust SDK's default
+   (up to one connection per vCPU); the Go PoC's Rust core follows the Go client's setting. Compare
+   the two reports' 48-worker rows with the TCP column in mind.
 3. **The VM metrics are coarse for light workloads.** They sample the whole 192-vCPU, 720 GB VM once a
    minute. Single-operation workloads (1, 2, 3, 6) use about 0.1% CPU and stay near the idle memory
    level, so small differences there are within noise.

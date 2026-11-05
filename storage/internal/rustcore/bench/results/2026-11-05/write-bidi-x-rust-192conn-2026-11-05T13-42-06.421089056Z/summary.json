@@ -1,0 +1,59 @@
+{
+  "op": "BIDI_APPENDABLE_WRITE",
+  "engine": "rust",
+  "transport": "bidi",
+  "label": "rust-192conn",
+  "bucket": "zonal",
+  "threads": 48,
+  "clients": 1,
+  "grpc_connections": 192,
+  "params": {
+    "network": {
+      "nic_rx_Gbps": 0.348,
+      "nic_tx_Gbps": 43.949,
+      "tcp_established_443_end": 192,
+      "tcp_established_443_mid": 192,
+      "tcp_established_443_start": 192
+    },
+    "object_size": 200000000,
+    "prefix": "rapid/write-rust-192conn/",
+    "write_chunk": 2097152
+  },
+  "window_start": "2026-11-05T13:42:36.552633Z",
+  "window_end": "2026-11-05T13:47:36.552688Z",
+  "measured_seconds": 300,
+  "ops": 8194,
+  "errors": 0,
+  "first_error": null,
+  "latency_ms_p50": 1715.742,
+  "latency_ms_p90": 2272.25,
+  "latency_ms_p99": 3337.068,
+  "latency_ms_p999": 5196.844,
+  "latency_ms_max": 11842.992,
+  "latency_ms_mean": 1757.703,
+  "ops_per_sec": 27.313,
+  "bytes": 1638211812352,
+  "throughput_MBps": 5460.705,
+  "throughput_Gbps": 43.686,
+  "completed_objects_Gbps": 43.701,
+  "process_cpu_percent_of_all_cores": 3.762,
+  "process_peak_rss_mib": 18292.199,
+  "available_processors": 192,
+  "go_version": "go1.26.8",
+  "gce_zone": "us-central1-f",
+  "gce_machine_type": "c4-standard-192",
+  "cloud_monitoring": {
+    "window_start": "2026-11-05T13:42:36Z",
+    "window_end": "2026-11-05T13:47:36Z",
+    "cpu_utilization_percent": {
+      "samples": 5,
+      "mean": 4.8,
+      "peak": 5.0
+    },
+    "memory_percent_used": {
+      "samples": 5,
+      "mean": 3.21,
+      "peak": 3.41
+    }
+  }
+}

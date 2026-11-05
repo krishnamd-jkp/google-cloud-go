@@ -16,11 +16,15 @@
 PoC's charts.py (java-storage/rust-poc-benchmark/scripts), so the two reports look the same.
 
 Usage:
-  python3 charts.py <results dir> <latency dir> <monitoring.csv> <output dir>
+  python3 charts.py <results dir> <latency dir> <monitoring.csv> <output dir> [<results dir> <latency dir> ...]
 
 <results dir>     one sub-directory per run with summary.json and timeline.csv
 <latency dir>     <run dir name>.csv files with "end_ms,latency_ms" of measured operations
 <monitoring.csv>  "time,metric,value" rows for cpu_utilization_percent and memory_percent_used
+
+More <results dir> <latency dir> pairs add runs from other passes. Runs labelled <engine>-192conn
+(run_matched.sh with CONNS=192) become the "192 connections each" variants of workloads 4 and 5.
+The whole-run timeline shows only the first pass (its <monitoring.csv>).
 """
 
 import csv
@@ -46,8 +50,10 @@ VARIANTS = [
     ("RANDOM8K_BIDI", "3. Random8K bidi"),
     ("RANDOM8K_JSON", "3. Random8K JSON"),
     ("BIDI_READ", "4. 16 MiB reads x48, bidi"),
+    ("BIDI_READ_192", "4. 16 MiB reads x48, bidi, 192 connections each"),
     ("READ_JSON", "4. 16 MiB reads x48, JSON"),
     ("BIDI_APPENDABLE_WRITE", "5. 200 MB writes x48, bidi appendable"),
+    ("BIDI_APPENDABLE_WRITE_192", "5. 200 MB writes x48, bidi appendable, 192 connections each"),
     ("WRITE_JSON", "5. 200 MB writes x48, JSON"),
     ("LIST_OBJECTS", "6. List Objects (gRPC)"),
     ("LIST_BUCKETS", "6. List Buckets (gRPC)"),
@@ -62,8 +68,10 @@ SHORT = {
     "RANDOM8K_BIDI": "3 Random8K bidi",
     "RANDOM8K_JSON": "3 Random8K JSON",
     "BIDI_READ": "4 Read x48 bidi",
+    "BIDI_READ_192": "4 Read x48 bidi 192c",
     "READ_JSON": "4 Read x48 JSON",
     "BIDI_APPENDABLE_WRITE": "5 Write x48 bidi",
+    "BIDI_APPENDABLE_WRITE_192": "5 Write x48 bidi 192c",
     "WRITE_JSON": "5 Write x48 JSON",
     "LIST_OBJECTS": "6 List Objects",
     "LIST_BUCKETS": "6 List Buckets",
@@ -149,22 +157,27 @@ def fmt(v):
     return f"{v:.2g}"
 
 
-def load(results, latdir):
+def load(passes):
+    """passes: [(results dir, latency dir), ...]; the first is the main pass."""
     runs = {}
-    for d in sorted(glob.glob(os.path.join(results, "*", "summary.json"))):
-        run = os.path.basename(os.path.dirname(d))
-        s = json.load(open(d))
-        lat = []
-        p = os.path.join(latdir, run + ".csv")
-        if os.path.exists(p):
-            for row in csv.reader(open(p)):
-                lat.append(float(row[1]))
-        tl = []
-        t = os.path.join(os.path.dirname(d), "timeline.csv")
-        if os.path.exists(t):
-            for row in csv.DictReader(open(t)):
-                tl.append((int(row["second"]), int(row["ops"]), int(row["amount"])))
-        runs[(s["op"], s["label"])] = {"s": s, "lat": sorted(lat), "tl": tl}
+    for i, (results, latdir) in enumerate(passes):
+        for d in sorted(glob.glob(os.path.join(results, "*", "summary.json"))):
+            run = os.path.basename(os.path.dirname(d))
+            s = json.load(open(d))
+            lat = []
+            p = os.path.join(latdir, run + ".csv")
+            if os.path.exists(p):
+                for row in csv.reader(open(p)):
+                    lat.append(float(row[1]))
+            tl = []
+            t = os.path.join(os.path.dirname(d), "timeline.csv")
+            if os.path.exists(t):
+                for row in csv.DictReader(open(t)):
+                    tl.append((int(row["second"]), int(row["ops"]), int(row["amount"])))
+            op, label = s["op"], s["label"]
+            if label.endswith("-192conn"):
+                op, label = op + "_192", label.replace("-192conn", "-default")
+            runs[(op, label)] = {"s": s, "lat": sorted(lat), "tl": tl, "main": i == 0}
     return runs
 
 
@@ -302,9 +315,13 @@ def hbar_chart(runs, out, title, ops, metric, unit, log=True):
 
 def throughput_time(runs, out):
     panels = [("BIDI_READ", "4. 16 MiB reads x48, bidi"), ("READ_JSON", "4. 16 MiB reads x48, JSON"),
-              ("BIDI_APPENDABLE_WRITE", "5. 200 MB writes x48, bidi appendable"), ("WRITE_JSON", "5. 200 MB writes x48, JSON")]
+              ("BIDI_APPENDABLE_WRITE", "5. 200 MB writes x48, bidi appendable"), ("WRITE_JSON", "5. 200 MB writes x48, JSON"),
+              ("BIDI_READ_192", "4. 16 MiB reads x48, bidi, 192 connections each"),
+              ("BIDI_APPENDABLE_WRITE_192", "5. 200 MB writes x48, bidi appendable, 192 connections each")]
+    panels = [p for p in panels if any((p[0], l) in runs for l in ("go-default", "rust-default"))]
     pw, ph = 560, 250
-    svg = Svg(2 * pw + 20, 2 * ph + 70)
+    nrows = math.ceil(len(panels) / 2)
+    svg = Svg(2 * pw + 20, nrows * ph + 70)
     svg.text(15, 25, "Throughput over the 5-minute measured window (MB/s, 10 s moving average)", 16, weight="bold")
     legend(svg, 15, 50)
     for i, (op, title) in enumerate(panels):
@@ -339,7 +356,7 @@ def throughput_time(runs, out):
         svg.line(x0, y0, x0, y1, "#999")
         for label, sm in series:
             svg.poly([(sx(k), sy(v)) for k, v in enumerate(sm)], COLORS[label], 2)
-        if op in ("BIDI_APPENDABLE_WRITE", "WRITE_JSON"):
+        if op in ("BIDI_APPENDABLE_WRITE", "WRITE_JSON", "BIDI_APPENDABLE_WRITE_192"):
             svg.text(x1, y0 - 4, "per-second bytes of completed 200 MB objects", 9, "end", "#666")
     svg.save(out)
 
@@ -401,6 +418,8 @@ def vm_timeline(runs, monitoring, out):
         pts[k].sort()
     windows = []
     for (op, label), r in runs.items():
+        if not r["main"]:
+            continue  # another pass, at another time: not on this pass's timeline
         s = r["s"]
         a = dt.datetime.fromisoformat(s["window_start"].replace("Z", "+00:00"))
         b = dt.datetime.fromisoformat(s["window_end"].replace("Z", "+00:00"))
@@ -444,14 +463,17 @@ def vm_timeline(runs, monitoring, out):
     svg.save(out)
 
 
-def main(results, latdir, monitoring, outdir):
+def main(results, latdir, monitoring, outdir, extra=()):
     os.makedirs(outdir, exist_ok=True)
-    runs = load(results, latdir)
+    runs = load([(results, latdir)] + list(zip(extra[0::2], extra[1::2])))
+    # Chart only the workload variants that have runs (the 192-connection ones need the extra pass).
+    VARIANTS[:] = [v for v in VARIANTS if any((v[0], l) in runs for l in ("go-default", "rust-default"))]
     latency_cdf(runs, os.path.join(outdir, "latency_distribution.svg"))
     latency_bars(runs, os.path.join(outdir, "latency_percentiles.svg"))
     data_ops = ["READ50X2X4_BIDI_CONCURRENT", "READ50X2X4_BIDI_SERIAL", "READ50X2X4_JSON_CONCURRENT",
-                "READ50X2X4_JSON_SERIAL", "RANDOM8K_BIDI", "RANDOM8K_JSON", "BIDI_READ", "READ_JSON",
-                "BIDI_APPENDABLE_WRITE", "WRITE_JSON"]
+                "READ50X2X4_JSON_SERIAL", "RANDOM8K_BIDI", "RANDOM8K_JSON", "BIDI_READ", "BIDI_READ_192", "READ_JSON",
+                "BIDI_APPENDABLE_WRITE", "BIDI_APPENDABLE_WRITE_192", "WRITE_JSON"]
+    data_ops = [op for op in data_ops if any((op, l) in runs for l in ("go-default", "rust-default"))]
     hbar_chart(runs, os.path.join(outdir, "throughput_mbps.svg"),
                "Throughput, MB/s (log scale; longer = more data moved)", data_ops,
                lambda s: s.get("throughput_MBps"), "MB/s (log scale)")
@@ -468,6 +490,6 @@ def main(results, latdir, monitoring, outdir):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 5:
+    if len(sys.argv) < 5 or len(sys.argv) % 2 == 0:
         sys.exit(__doc__)
-    main(*sys.argv[1:])
+    main(*sys.argv[1:5], extra=sys.argv[5:])

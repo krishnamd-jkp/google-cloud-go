@@ -17,7 +17,7 @@ DirectPath, so every gRPC client runs on CloudPath.
 
 | Run | What |
 |---|---|
-| [`RESULTS.md`](RESULTS.md) (2026-11-05) | **current:** workloads 1–6 in the Java PoC's report format, each engine on its default settings (`rapidbench`) |
+| [`RESULTS.md`](RESULTS.md) (2026-11-05) | **current:** workloads 1–6 in the Java PoC's report format, each engine on its default settings (`rapidbench`), plus workloads 4 and 5 over Bidi with 192 gRPC connections on both engines (`run_matched.sh`) |
 | [`results/2026-11-03/REPORT.md`](results/2026-11-03/REPORT.md) | Open, Read50x2x4 and Random8K with one worker (`rustbench`, profile `ssb`) |
 | [`results/2026-11-04/REPORT.md`](results/2026-11-04/REPORT.md) | workloads 1–6 of the SDK consolidation plan, 48 connections for the 48-worker workloads (`rustbench`, profile `worklog`) |
 

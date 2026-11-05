@@ -1,0 +1,58 @@
+{
+  "op": "BIDI_READ",
+  "engine": "rust",
+  "transport": "bidi",
+  "label": "rust-192conn",
+  "bucket": "regional",
+  "threads": 48,
+  "clients": 1,
+  "grpc_connections": 192,
+  "params": {
+    "network": {
+      "nic_rx_Gbps": 9.716,
+      "nic_tx_Gbps": 0.055,
+      "tcp_established_443_end": 192,
+      "tcp_established_443_mid": 193,
+      "tcp_established_443_start": 193
+    },
+    "object": "rapid/read-200000000",
+    "object_size": 200000000,
+    "range_size": 16777216
+  },
+  "window_start": "2026-11-05T13:36:04.915104Z",
+  "window_end": "2026-11-05T13:41:04.915262Z",
+  "measured_seconds": 300,
+  "ops": 20474,
+  "errors": 0,
+  "first_error": null,
+  "latency_ms_p50": 678.185,
+  "latency_ms_p90": 750.03,
+  "latency_ms_p99": 3458.644,
+  "latency_ms_p999": 4464.174,
+  "latency_ms_max": 5389.119,
+  "latency_ms_mean": 703.538,
+  "ops_per_sec": 68.247,
+  "bytes": 343496720384,
+  "throughput_MBps": 1144.988,
+  "throughput_Gbps": 9.16,
+  "process_cpu_percent_of_all_cores": 1.303,
+  "process_peak_rss_mib": 1901.172,
+  "available_processors": 192,
+  "go_version": "go1.26.8",
+  "gce_zone": "us-central1-f",
+  "gce_machine_type": "c4-standard-192",
+  "cloud_monitoring": {
+    "window_start": "2026-11-05T13:36:04Z",
+    "window_end": "2026-11-05T13:41:04Z",
+    "cpu_utilization_percent": {
+      "samples": 5,
+      "mean": 2.26,
+      "peak": 2.29
+    },
+    "memory_percent_used": {
+      "samples": 5,
+      "mean": 1.02,
+      "peak": 1.02
+    }
+  }
+}

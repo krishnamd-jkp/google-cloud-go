@@ -1,73 +1,85 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="910" height="575" viewBox="0 0 910 575">
+<svg xmlns="http://www.w3.org/2000/svg" width="910" height="667" viewBox="0 0 910 667">
 <rect width="100%" height="100%" fill="white"/>
 <text x="15.0" y="25.0" font-size="16" text-anchor="start" fill="#222" font-weight="bold" font-family="Helvetica,Arial,sans-serif">Throughput, MB/s (log scale; longer = more data moved)</text>
 <rect x="15.0" y="40.0" width="14.0" height="14.0" fill="#1f6fb5" fill-opacity="1.0"/>
 <text x="35.0" y="52.0" font-size="12" text-anchor="start" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">Go (current SDK)</text>
 <rect x="185.0" y="40.0" width="14.0" height="14.0" fill="#e0631c" fill-opacity="1.0"/>
 <text x="205.0" y="52.0" font-size="12" text-anchor="start" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">Rust (prototype)</text>
-<line x1="339.2" y1="70.0" x2="339.2" y2="530.0" stroke="#eee" stroke-width="1"/>
-<text x="339.2" y="544.0" font-size="10" text-anchor="middle" fill="#666" font-weight="normal" font-family="Helvetica,Arial,sans-serif">1</text>
-<line x1="427.2" y1="70.0" x2="427.2" y2="530.0" stroke="#eee" stroke-width="1"/>
-<text x="427.2" y="544.0" font-size="10" text-anchor="middle" fill="#666" font-weight="normal" font-family="Helvetica,Arial,sans-serif">5</text>
-<line x1="465.2" y1="70.0" x2="465.2" y2="530.0" stroke="#eee" stroke-width="1"/>
-<text x="465.2" y="544.0" font-size="10" text-anchor="middle" fill="#666" font-weight="normal" font-family="Helvetica,Arial,sans-serif">10</text>
-<line x1="553.2" y1="70.0" x2="553.2" y2="530.0" stroke="#eee" stroke-width="1"/>
-<text x="553.2" y="544.0" font-size="10" text-anchor="middle" fill="#666" font-weight="normal" font-family="Helvetica,Arial,sans-serif">50</text>
-<line x1="591.2" y1="70.0" x2="591.2" y2="530.0" stroke="#eee" stroke-width="1"/>
-<text x="591.2" y="544.0" font-size="10" text-anchor="middle" fill="#666" font-weight="normal" font-family="Helvetica,Arial,sans-serif">100</text>
-<line x1="679.2" y1="70.0" x2="679.2" y2="530.0" stroke="#eee" stroke-width="1"/>
-<text x="679.2" y="544.0" font-size="10" text-anchor="middle" fill="#666" font-weight="normal" font-family="Helvetica,Arial,sans-serif">500</text>
-<line x1="717.2" y1="70.0" x2="717.2" y2="530.0" stroke="#eee" stroke-width="1"/>
-<text x="717.2" y="544.0" font-size="10" text-anchor="middle" fill="#666" font-weight="normal" font-family="Helvetica,Arial,sans-serif">1k</text>
-<text x="490.0" y="560.0" font-size="11" text-anchor="middle" fill="#444" font-weight="normal" font-family="Helvetica,Arial,sans-serif">MB/s (log scale)</text>
+<line x1="331.1" y1="70.0" x2="331.1" y2="622.0" stroke="#eee" stroke-width="1"/>
+<text x="331.1" y="636.0" font-size="10" text-anchor="middle" fill="#666" font-weight="normal" font-family="Helvetica,Arial,sans-serif">1</text>
+<line x1="414.4" y1="70.0" x2="414.4" y2="622.0" stroke="#eee" stroke-width="1"/>
+<text x="414.4" y="636.0" font-size="10" text-anchor="middle" fill="#666" font-weight="normal" font-family="Helvetica,Arial,sans-serif">5</text>
+<line x1="450.2" y1="70.0" x2="450.2" y2="622.0" stroke="#eee" stroke-width="1"/>
+<text x="450.2" y="636.0" font-size="10" text-anchor="middle" fill="#666" font-weight="normal" font-family="Helvetica,Arial,sans-serif">10</text>
+<line x1="533.5" y1="70.0" x2="533.5" y2="622.0" stroke="#eee" stroke-width="1"/>
+<text x="533.5" y="636.0" font-size="10" text-anchor="middle" fill="#666" font-weight="normal" font-family="Helvetica,Arial,sans-serif">50</text>
+<line x1="569.4" y1="70.0" x2="569.4" y2="622.0" stroke="#eee" stroke-width="1"/>
+<text x="569.4" y="636.0" font-size="10" text-anchor="middle" fill="#666" font-weight="normal" font-family="Helvetica,Arial,sans-serif">100</text>
+<line x1="652.7" y1="70.0" x2="652.7" y2="622.0" stroke="#eee" stroke-width="1"/>
+<text x="652.7" y="636.0" font-size="10" text-anchor="middle" fill="#666" font-weight="normal" font-family="Helvetica,Arial,sans-serif">500</text>
+<line x1="688.6" y1="70.0" x2="688.6" y2="622.0" stroke="#eee" stroke-width="1"/>
+<text x="688.6" y="636.0" font-size="10" text-anchor="middle" fill="#666" font-weight="normal" font-family="Helvetica,Arial,sans-serif">1k</text>
+<line x1="771.9" y1="70.0" x2="771.9" y2="622.0" stroke="#eee" stroke-width="1"/>
+<text x="771.9" y="636.0" font-size="10" text-anchor="middle" fill="#666" font-weight="normal" font-family="Helvetica,Arial,sans-serif">5k</text>
+<text x="490.0" y="652.0" font-size="11" text-anchor="middle" fill="#444" font-weight="normal" font-family="Helvetica,Arial,sans-serif">MB/s (log scale)</text>
 <text x="180.0" y="97.0" font-size="11" text-anchor="end" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">2 R50 bidi conc</text>
-<rect x="190.0" y="76.0" width="420.4" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
-<text x="615.4" y="87.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">142.1</text>
-<rect x="190.0" y="93.0" width="433.8" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
-<text x="628.8" y="104.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">181.7</text>
+<rect x="190.0" y="76.0" width="397.6" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
+<text x="592.6" y="87.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">142.1</text>
+<rect x="190.0" y="93.0" width="410.3" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
+<text x="605.3" y="104.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">181.7</text>
 <text x="180.0" y="143.0" font-size="11" text-anchor="end" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">2 R50 bidi serial</text>
-<rect x="190.0" y="122.0" width="303.8" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
-<text x="498.8" y="133.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">16.9</text>
-<rect x="190.0" y="139.0" width="305.7" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
-<text x="500.7" y="150.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">17.5</text>
+<rect x="190.0" y="122.0" width="287.4" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
+<text x="482.4" y="133.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">16.9</text>
+<rect x="190.0" y="139.0" width="289.1" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
+<text x="484.1" y="150.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">17.5</text>
 <text x="180.0" y="189.0" font-size="11" text-anchor="end" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">2 R50 JSON conc</text>
-<rect x="190.0" y="168.0" width="444.8" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
-<text x="639.8" y="179.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">221.9</text>
-<rect x="190.0" y="185.0" width="483.3" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
-<text x="678.3" y="196.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">448.5</text>
+<rect x="190.0" y="168.0" width="420.7" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
+<text x="615.7" y="179.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">221.9</text>
+<rect x="190.0" y="185.0" width="457.1" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
+<text x="652.1" y="196.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">448.5</text>
 <text x="180.0" y="235.0" font-size="11" text-anchor="end" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">2 R50 JSON serial</text>
-<rect x="190.0" y="214.0" width="291.2" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
-<text x="486.2" y="225.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">13.4</text>
-<rect x="190.0" y="231.0" width="293.5" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
-<text x="488.5" y="242.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">14.0</text>
+<rect x="190.0" y="214.0" width="275.4" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
+<text x="470.4" y="225.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">13.4</text>
+<rect x="190.0" y="231.0" width="277.6" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
+<text x="472.6" y="242.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">14.0</text>
 <text x="180.0" y="281.0" font-size="11" text-anchor="end" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">3 Random8K bidi</text>
-<rect x="190.0" y="260.0" width="37.9" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
-<text x="232.9" y="271.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">0.13</text>
-<rect x="190.0" y="277.0" width="38.3" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
-<text x="233.3" y="288.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">0.13</text>
+<rect x="190.0" y="260.0" width="35.9" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
+<text x="230.9" y="271.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">0.13</text>
+<rect x="190.0" y="277.0" width="36.3" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
+<text x="231.3" y="288.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">0.13</text>
 <text x="180.0" y="327.0" font-size="11" text-anchor="end" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">3 Random8K JSON</text>
-<rect x="190.0" y="306.0" width="40.8" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
-<text x="235.8" y="317.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">0.14</text>
-<rect x="190.0" y="323.0" width="39.6" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
-<text x="234.6" y="334.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">0.14</text>
+<rect x="190.0" y="306.0" width="38.6" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
+<text x="233.6" y="317.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">0.14</text>
+<rect x="190.0" y="323.0" width="37.4" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
+<text x="232.4" y="334.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">0.14</text>
 <text x="180.0" y="373.0" font-size="11" text-anchor="end" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">4 Read x48 bidi</text>
-<rect x="190.0" y="352.0" width="439.4" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
-<text x="634.4" y="363.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">201.3</text>
-<rect x="190.0" y="369.0" width="460.6" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
-<text x="655.6" y="380.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">296.6</text>
-<text x="180.0" y="419.0" font-size="11" text-anchor="end" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">4 Read x48 JSON</text>
-<rect x="190.0" y="398.0" width="461.5" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
-<text x="656.5" y="409.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">301.5</text>
-<rect x="190.0" y="415.0" width="585.6" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
-<text x="780.6" y="426.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">2,912.2</text>
-<text x="180.0" y="465.0" font-size="11" text-anchor="end" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">5 Write x48 bidi</text>
-<rect x="190.0" y="444.0" width="471.3" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
-<text x="666.3" y="455.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">360.1</text>
-<rect x="190.0" y="461.0" width="474.1" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
-<text x="669.1" y="472.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">379.0</text>
-<text x="180.0" y="511.0" font-size="11" text-anchor="end" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">5 Write x48 JSON</text>
-<rect x="190.0" y="490.0" width="455.2" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
-<text x="650.2" y="501.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">268.6</text>
-<rect x="190.0" y="507.0" width="551.9" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
-<text x="746.9" y="518.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">1,571.2</text>
+<rect x="190.0" y="352.0" width="415.6" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
+<text x="610.6" y="363.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">201.3</text>
+<rect x="190.0" y="369.0" width="435.7" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
+<text x="630.7" y="380.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">296.6</text>
+<text x="180.0" y="419.0" font-size="11" text-anchor="end" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">4 Read x48 bidi 192c</text>
+<rect x="190.0" y="398.0" width="508.0" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
+<text x="703.0" y="409.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">1,199.7</text>
+<rect x="190.0" y="415.0" width="505.6" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
+<text x="700.6" y="426.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">1,145.0</text>
+<text x="180.0" y="465.0" font-size="11" text-anchor="end" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">4 Read x48 JSON</text>
+<rect x="190.0" y="444.0" width="436.5" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
+<text x="631.5" y="455.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">301.5</text>
+<rect x="190.0" y="461.0" width="553.9" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
+<text x="748.9" y="472.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">2,912.2</text>
+<text x="180.0" y="511.0" font-size="11" text-anchor="end" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">5 Write x48 bidi</text>
+<rect x="190.0" y="490.0" width="445.7" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
+<text x="640.7" y="501.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">360.1</text>
+<rect x="190.0" y="507.0" width="448.4" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
+<text x="643.4" y="518.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">379.0</text>
+<text x="180.0" y="557.0" font-size="11" text-anchor="end" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">5 Write x48 bidi 192c</text>
+<rect x="190.0" y="536.0" width="573.1" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
+<text x="768.1" y="547.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">4,223.8</text>
+<rect x="190.0" y="553.0" width="586.4" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
+<text x="781.4" y="564.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">5,460.7</text>
+<text x="180.0" y="603.0" font-size="11" text-anchor="end" fill="#222" font-weight="normal" font-family="Helvetica,Arial,sans-serif">5 Write x48 JSON</text>
+<rect x="190.0" y="582.0" width="430.5" height="14.0" fill="#1f6fb5" fill-opacity="0.9"/>
+<text x="625.5" y="593.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">268.6</text>
+<rect x="190.0" y="599.0" width="521.9" height="14.0" fill="#e0631c" fill-opacity="0.9"/>
+<text x="716.9" y="610.0" font-size="10" text-anchor="start" fill="#333" font-weight="normal" font-family="Helvetica,Arial,sans-serif">1,571.2</text>
 </svg>

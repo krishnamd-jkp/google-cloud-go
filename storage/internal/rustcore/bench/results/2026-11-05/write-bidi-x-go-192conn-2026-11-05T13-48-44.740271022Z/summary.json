@@ -1,0 +1,59 @@
+{
+  "op": "BIDI_APPENDABLE_WRITE",
+  "engine": "go",
+  "transport": "bidi",
+  "label": "go-192conn",
+  "bucket": "zonal",
+  "threads": 48,
+  "clients": 1,
+  "grpc_connections": 192,
+  "params": {
+    "network": {
+      "nic_rx_Gbps": 0.245,
+      "nic_tx_Gbps": 35.172,
+      "tcp_established_443_end": 192,
+      "tcp_established_443_mid": 192,
+      "tcp_established_443_start": 192
+    },
+    "object_size": 200000000,
+    "prefix": "rapid/write-go-192conn/",
+    "write_chunk": 2097152
+  },
+  "window_start": "2026-11-05T13:49:14.941004Z",
+  "window_end": "2026-11-05T13:54:14.941127Z",
+  "measured_seconds": 300,
+  "ops": 6333,
+  "errors": 1,
+  "first_error": "rpc error: code = Unavailable desc = 502:Bad Gateway",
+  "latency_ms_p50": 1551.259,
+  "latency_ms_p90": 1782.948,
+  "latency_ms_p99": 2820.637,
+  "latency_ms_p999": 150407.762,
+  "latency_ms_max": 199327.726,
+  "latency_ms_mean": 1952.523,
+  "ops_per_sec": 21.11,
+  "bytes": 1267145259520,
+  "throughput_MBps": 4223.816,
+  "throughput_Gbps": 33.791,
+  "completed_objects_Gbps": 33.776,
+  "process_cpu_percent_of_all_cores": 3.176,
+  "process_peak_rss_mib": 2663.367,
+  "available_processors": 192,
+  "go_version": "go1.26.8",
+  "gce_zone": "us-central1-f",
+  "gce_machine_type": "c4-standard-192",
+  "cloud_monitoring": {
+    "window_start": "2026-11-05T13:49:14Z",
+    "window_end": "2026-11-05T13:54:14Z",
+    "cpu_utilization_percent": {
+      "samples": 5,
+      "mean": 4.23,
+      "peak": 5.59
+    },
+    "memory_percent_used": {
+      "samples": 5,
+      "mean": 1.09,
+      "peak": 1.11
+    }
+  }
+}

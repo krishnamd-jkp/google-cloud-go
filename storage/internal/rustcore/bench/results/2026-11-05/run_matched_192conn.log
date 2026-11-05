@@ -1,0 +1,42 @@
+results: ~/rapid-results/20261105T132903Z-matched-192conn (gRPC connections on both engines: 192)
+== smoke (45 s per run)
+skipped (SKIP_SMOKE)
+== 13:29:03 go-192conn --workload=read --transport=bidi --bucket-label=regional 
+  "grpc_connections": 192,
+      "tcp_established_443_mid": 192,
+  "ops": 21452,
+  "errors": 0,
+  "latency_ms_p50": 685.305,
+  "latency_ms_p99": 935.318,
+  "throughput_MBps": 1199.683,
+results: read-bidi-x-go-192conn-2026-11-05T13-29-03.853808266Z
+== 13:35:34 rust-192conn --workload=read --transport=bidi --bucket-label=regional 
+  "grpc_connections": 192,
+      "tcp_established_443_mid": 193,
+  "ops": 20474,
+  "errors": 0,
+  "latency_ms_p50": 678.185,
+  "latency_ms_p99": 3458.644,
+  "throughput_MBps": 1144.988,
+results: read-bidi-x-rust-192conn-2026-11-05T13-35-34.789366186Z
+== 13:42:06 rust-192conn --workload=write --transport=bidi --bucket-label=zonal 
+  "grpc_connections": 192,
+      "tcp_established_443_mid": 192,
+  "ops": 8194,
+  "errors": 0,
+  "latency_ms_p50": 1715.742,
+  "latency_ms_p99": 3337.068,
+  "throughput_MBps": 5460.705,
+results: write-bidi-x-rust-192conn-2026-11-05T13-42-06.421089056Z
+== 13:48:44 go-192conn --workload=write --transport=bidi --bucket-label=zonal 
+  "grpc_connections": 192,
+      "tcp_established_443_mid": 192,
+  "ops": 6333,
+  "errors": 1,
+  "latency_ms_p50": 1551.259,
+  "latency_ms_p99": 2820.637,
+  "throughput_MBps": 4223.816,
+results: write-bidi-x-go-192conn-2026-11-05T13-48-44.740271022Z
+rapidbench: 13:49:29.079939 worker 5: rpc error: code = Unavailable desc = 502:Bad Gateway
+== waiting 240 s for Cloud Monitoring
+done: ~/rapid-results/20261105T132903Z-matched-192conn/summary.md
