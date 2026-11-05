@@ -10,8 +10,15 @@ DirectPath, so every gRPC client runs on CloudPath.
 - `../cmd/rustbench-report`: turns the JSON lines into a Markdown report (Go).
 - `vm/`: scripts that create a GCE VM, ship the local code to it, build everything there,
   run the suite and fetch the results.
+- `../cmd/rapidbench` and `rapid/`: the SDK consolidation benchmark plan in the same form as the
+  Java PoC's (one process per run, the same workloads, windows, output files and charts).
 
-Nothing here has been run yet.
+## Results
+
+| Run | What |
+|---|---|
+| [`results/2026-11-03/REPORT.md`](results/2026-11-03/REPORT.md) | Open, Read50x2x4 and Random8K with one worker (`rustbench`, profile `ssb`) |
+| [`results/2026-11-04/REPORT.md`](results/2026-11-04/REPORT.md) | workloads 1–6 of the SDK consolidation plan, 48 connections for the 48-worker workloads (`rustbench`, profile `worklog`) |
 
 ## Backends
 

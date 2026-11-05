@@ -1,0 +1,2482 @@
+{
+  "timeSeries": [
+    {
+      "metric": {
+        "labels": {
+          "instance_name": "benchmark-vm"
+        },
+        "type": "compute.googleapis.com/instance/cpu/utilization"
+      },
+      "resource": {
+        "type": "gce_instance",
+        "labels": {
+          "project_id": "example-project",
+          "zone": "us-central1-b",
+          "instance_id": "0"
+        }
+      },
+      "metricKind": "GAUGE",
+      "valueType": "DOUBLE",
+      "points": [
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:55:00Z",
+            "endTime": "2026-11-04T14:55:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00055501375233827982
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:54:00Z",
+            "endTime": "2026-11-04T14:54:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00064029571612138618
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:53:00Z",
+            "endTime": "2026-11-04T14:53:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0011479906049020074
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:52:00Z",
+            "endTime": "2026-11-04T14:52:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00061772995798984687
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:51:00Z",
+            "endTime": "2026-11-04T14:51:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00050526310903112261
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:50:00Z",
+            "endTime": "2026-11-04T14:50:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00053461030729332981
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:49:00Z",
+            "endTime": "2026-11-04T14:49:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00050855381281406954
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:48:00Z",
+            "endTime": "2026-11-04T14:48:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00052415368390181058
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:47:00Z",
+            "endTime": "2026-11-04T14:47:00Z"
+          },
+          "value": {
+            "doubleValue": 0.000593946278973413
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:46:00Z",
+            "endTime": "2026-11-04T14:46:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00050891886275066
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:45:00Z",
+            "endTime": "2026-11-04T14:45:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00053074896997789742
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:44:00Z",
+            "endTime": "2026-11-04T14:44:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00054101721689095124
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:43:00Z",
+            "endTime": "2026-11-04T14:43:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00055829718205934061
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:42:00Z",
+            "endTime": "2026-11-04T14:42:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00062905502646831083
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:41:00Z",
+            "endTime": "2026-11-04T14:41:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00050815773506498216
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:40:00Z",
+            "endTime": "2026-11-04T14:40:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00053275013813731671
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:39:00Z",
+            "endTime": "2026-11-04T14:39:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00057923616407656983
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:38:00Z",
+            "endTime": "2026-11-04T14:38:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0011005111042329139
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:37:00Z",
+            "endTime": "2026-11-04T14:37:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00061017995557601055
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:36:00Z",
+            "endTime": "2026-11-04T14:36:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00052328226743504223
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:35:00Z",
+            "endTime": "2026-11-04T14:35:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00059014897219166558
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:34:00Z",
+            "endTime": "2026-11-04T14:34:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00063072278669677772
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:33:00Z",
+            "endTime": "2026-11-04T14:33:00Z"
+          },
+          "value": {
+            "doubleValue": 0.000577124209440664
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:32:00Z",
+            "endTime": "2026-11-04T14:32:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00057159597492955066
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:31:00Z",
+            "endTime": "2026-11-04T14:31:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00048116967944717239
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:30:00Z",
+            "endTime": "2026-11-04T14:30:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00052356446475382908
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:29:00Z",
+            "endTime": "2026-11-04T14:29:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00052466115035340653
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:28:00Z",
+            "endTime": "2026-11-04T14:28:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00049884387878225628
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:27:00Z",
+            "endTime": "2026-11-04T14:27:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00064801802419146447
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:26:00Z",
+            "endTime": "2026-11-04T14:26:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00050393136495567126
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:25:00Z",
+            "endTime": "2026-11-04T14:25:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00049745052821713721
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:24:00Z",
+            "endTime": "2026-11-04T14:24:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00064173837491807715
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:23:00Z",
+            "endTime": "2026-11-04T14:23:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0010482120891171891
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:22:00Z",
+            "endTime": "2026-11-04T14:22:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00065053330890142052
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:21:00Z",
+            "endTime": "2026-11-04T14:21:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00051848393887515463
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:20:00Z",
+            "endTime": "2026-11-04T14:20:00Z"
+          },
+          "value": {
+            "doubleValue": 0.000530198762229222
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:19:00Z",
+            "endTime": "2026-11-04T14:19:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00058264652590670114
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:18:00Z",
+            "endTime": "2026-11-04T14:18:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00050072368870278047
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:17:00Z",
+            "endTime": "2026-11-04T14:17:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00065002240588935619
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:16:00Z",
+            "endTime": "2026-11-04T14:16:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0005008409013369273
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:15:00Z",
+            "endTime": "2026-11-04T14:15:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00048078313340593266
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:14:00Z",
+            "endTime": "2026-11-04T14:14:00Z"
+          },
+          "value": {
+            "doubleValue": 0.000595017643751324
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:13:00Z",
+            "endTime": "2026-11-04T14:13:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00053754398726684686
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:12:00Z",
+            "endTime": "2026-11-04T14:12:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0006235503776063448
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:11:00Z",
+            "endTime": "2026-11-04T14:11:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00051586749848000731
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:10:00Z",
+            "endTime": "2026-11-04T14:10:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00053260391512045162
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:09:00Z",
+            "endTime": "2026-11-04T14:09:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0006053249064557854
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:08:00Z",
+            "endTime": "2026-11-04T14:08:00Z"
+          },
+          "value": {
+            "doubleValue": 0.001054888171542719
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:07:00Z",
+            "endTime": "2026-11-04T14:07:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00061609407027308149
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:06:00Z",
+            "endTime": "2026-11-04T14:06:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00051634819073740343
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:05:00Z",
+            "endTime": "2026-11-04T14:05:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00050144808172660762
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:04:00Z",
+            "endTime": "2026-11-04T14:04:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0005627832728982361
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:03:00Z",
+            "endTime": "2026-11-04T14:03:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00055761441673812188
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:02:00Z",
+            "endTime": "2026-11-04T14:02:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0006296879446125558
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:01:00Z",
+            "endTime": "2026-11-04T14:01:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00050309287508096322
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T14:00:00Z",
+            "endTime": "2026-11-04T14:00:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00049441078340635165
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:59:00Z",
+            "endTime": "2026-11-04T13:59:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00056148947998306336
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:58:00Z",
+            "endTime": "2026-11-04T13:58:00Z"
+          },
+          "value": {
+            "doubleValue": 0.000558879015862759
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:57:00Z",
+            "endTime": "2026-11-04T13:57:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00060636342176520789
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:56:00Z",
+            "endTime": "2026-11-04T13:56:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0005106646587617231
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:55:00Z",
+            "endTime": "2026-11-04T13:55:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00054529355158068583
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:54:00Z",
+            "endTime": "2026-11-04T13:54:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00059430429115284113
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:53:00Z",
+            "endTime": "2026-11-04T13:53:00Z"
+          },
+          "value": {
+            "doubleValue": 0.001154301263025559
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:52:00Z",
+            "endTime": "2026-11-04T13:52:00Z"
+          },
+          "value": {
+            "doubleValue": 0.000590761666292868
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:51:00Z",
+            "endTime": "2026-11-04T13:51:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00052764326925019609
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:50:00Z",
+            "endTime": "2026-11-04T13:50:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00049799598130183156
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:49:00Z",
+            "endTime": "2026-11-04T13:49:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00056598567063967191
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:48:00Z",
+            "endTime": "2026-11-04T13:48:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00057016565168055422
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:47:00Z",
+            "endTime": "2026-11-04T13:47:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0006196538629824191
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:46:00Z",
+            "endTime": "2026-11-04T13:46:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00052935858077015989
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:45:00Z",
+            "endTime": "2026-11-04T13:45:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00051732676337855484
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:44:00Z",
+            "endTime": "2026-11-04T13:44:00Z"
+          },
+          "value": {
+            "doubleValue": 0.000534794529189892
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:43:00Z",
+            "endTime": "2026-11-04T13:43:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0006102158643585653
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:42:00Z",
+            "endTime": "2026-11-04T13:42:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00065357348643146906
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:41:00Z",
+            "endTime": "2026-11-04T13:41:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00053155040155148628
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:40:00Z",
+            "endTime": "2026-11-04T13:40:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0005397471573117071
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:39:00Z",
+            "endTime": "2026-11-04T13:39:00Z"
+          },
+          "value": {
+            "doubleValue": 0.001031924545411458
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:38:00Z",
+            "endTime": "2026-11-04T13:38:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0015209056252640746
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:37:00Z",
+            "endTime": "2026-11-04T13:37:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00103561717052369
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:36:00Z",
+            "endTime": "2026-11-04T13:36:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0015597839308523159
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:35:00Z",
+            "endTime": "2026-11-04T13:35:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00056411292976450667
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:34:00Z",
+            "endTime": "2026-11-04T13:34:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0005826414448326507
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:33:00Z",
+            "endTime": "2026-11-04T13:33:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00068432657974710771
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:32:00Z",
+            "endTime": "2026-11-04T13:32:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00080863561178495672
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:31:00Z",
+            "endTime": "2026-11-04T13:31:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00065643858774598769
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:30:00Z",
+            "endTime": "2026-11-04T13:30:00Z"
+          },
+          "value": {
+            "doubleValue": 0.001438629972588185
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:29:00Z",
+            "endTime": "2026-11-04T13:29:00Z"
+          },
+          "value": {
+            "doubleValue": 0.020034247890333114
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:28:00Z",
+            "endTime": "2026-11-04T13:28:00Z"
+          },
+          "value": {
+            "doubleValue": 0.026541634698166186
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:27:00Z",
+            "endTime": "2026-11-04T13:27:00Z"
+          },
+          "value": {
+            "doubleValue": 0.026804737849501395
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:26:00Z",
+            "endTime": "2026-11-04T13:26:00Z"
+          },
+          "value": {
+            "doubleValue": 0.026174001180080429
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:25:00Z",
+            "endTime": "2026-11-04T13:25:00Z"
+          },
+          "value": {
+            "doubleValue": 0.022801236922106543
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:24:00Z",
+            "endTime": "2026-11-04T13:24:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0069052768503638619
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:23:00Z",
+            "endTime": "2026-11-04T13:23:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0015065754302001878
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:22:00Z",
+            "endTime": "2026-11-04T13:22:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0010160096461169763
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:21:00Z",
+            "endTime": "2026-11-04T13:21:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00061032171585048266
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:20:00Z",
+            "endTime": "2026-11-04T13:20:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00061672110851134214
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:19:00Z",
+            "endTime": "2026-11-04T13:19:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00063958639195820725
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:18:00Z",
+            "endTime": "2026-11-04T13:18:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00074942512747845234
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:17:00Z",
+            "endTime": "2026-11-04T13:17:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0047664203250620731
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:16:00Z",
+            "endTime": "2026-11-04T13:16:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00659253679712448
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:15:00Z",
+            "endTime": "2026-11-04T13:15:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0070800776408892338
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:14:00Z",
+            "endTime": "2026-11-04T13:14:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0073466457593850815
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:13:00Z",
+            "endTime": "2026-11-04T13:13:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0028953960008872553
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:12:00Z",
+            "endTime": "2026-11-04T13:12:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00072345877952860373
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:11:00Z",
+            "endTime": "2026-11-04T13:11:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00068902913807215155
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:10:00Z",
+            "endTime": "2026-11-04T13:10:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00067140313760995056
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:09:00Z",
+            "endTime": "2026-11-04T13:09:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00072467065477894727
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:08:00Z",
+            "endTime": "2026-11-04T13:08:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0010694714444146787
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:07:00Z",
+            "endTime": "2026-11-04T13:07:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00072523585638559023
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:06:00Z",
+            "endTime": "2026-11-04T13:06:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00071191226006577478
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:05:00Z",
+            "endTime": "2026-11-04T13:05:00Z"
+          },
+          "value": {
+            "doubleValue": 0.000720453906520725
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:04:00Z",
+            "endTime": "2026-11-04T13:04:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00076523670675372713
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:03:00Z",
+            "endTime": "2026-11-04T13:03:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0014796793549215358
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:02:00Z",
+            "endTime": "2026-11-04T13:02:00Z"
+          },
+          "value": {
+            "doubleValue": 0.020696661875798047
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:01:00Z",
+            "endTime": "2026-11-04T13:01:00Z"
+          },
+          "value": {
+            "doubleValue": 0.032594908048308148
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T13:00:00Z",
+            "endTime": "2026-11-04T13:00:00Z"
+          },
+          "value": {
+            "doubleValue": 0.032060195446460528
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:59:00Z",
+            "endTime": "2026-11-04T12:59:00Z"
+          },
+          "value": {
+            "doubleValue": 0.030693321167184071
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:58:00Z",
+            "endTime": "2026-11-04T12:58:00Z"
+          },
+          "value": {
+            "doubleValue": 0.029299561486292213
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:57:00Z",
+            "endTime": "2026-11-04T12:57:00Z"
+          },
+          "value": {
+            "doubleValue": 0.012489433658207203
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:56:00Z",
+            "endTime": "2026-11-04T12:56:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00063979798423474676
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:55:00Z",
+            "endTime": "2026-11-04T12:55:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00067645072787456682
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:54:00Z",
+            "endTime": "2026-11-04T12:54:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00069963906410034976
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:53:00Z",
+            "endTime": "2026-11-04T12:53:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0012197624183934231
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:52:00Z",
+            "endTime": "2026-11-04T12:52:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00066317258376453016
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:51:00Z",
+            "endTime": "2026-11-04T12:51:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00062094391428249508
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:50:00Z",
+            "endTime": "2026-11-04T12:50:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00064204192952009478
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:49:00Z",
+            "endTime": "2026-11-04T12:49:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0007239436273380307
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:48:00Z",
+            "endTime": "2026-11-04T12:48:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00065780135317905009
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:47:00Z",
+            "endTime": "2026-11-04T12:47:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00082771270409520215
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:46:00Z",
+            "endTime": "2026-11-04T12:46:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00479271735461424
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:45:00Z",
+            "endTime": "2026-11-04T12:45:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0081430139772133234
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:44:00Z",
+            "endTime": "2026-11-04T12:44:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0077883582907887217
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:43:00Z",
+            "endTime": "2026-11-04T12:43:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00788018551244139
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:42:00Z",
+            "endTime": "2026-11-04T12:42:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0039549914771024909
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:41:00Z",
+            "endTime": "2026-11-04T12:41:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00061594767191195385
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:40:00Z",
+            "endTime": "2026-11-04T12:40:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00073822709240892615
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:39:00Z",
+            "endTime": "2026-11-04T12:39:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00081788916402116571
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:38:00Z",
+            "endTime": "2026-11-04T12:38:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0035308849408832231
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:37:00Z",
+            "endTime": "2026-11-04T12:37:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0056612079118285889
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:36:00Z",
+            "endTime": "2026-11-04T12:36:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0051068419381688082
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:35:00Z",
+            "endTime": "2026-11-04T12:35:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0053442840829990559
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:34:00Z",
+            "endTime": "2026-11-04T12:34:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0032408835348003134
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:33:00Z",
+            "endTime": "2026-11-04T12:33:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0039366362461091993
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:32:00Z",
+            "endTime": "2026-11-04T12:32:00Z"
+          },
+          "value": {
+            "doubleValue": 0.022483709399657745
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:31:00Z",
+            "endTime": "2026-11-04T12:31:00Z"
+          },
+          "value": {
+            "doubleValue": 0.050867806394698158
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:30:00Z",
+            "endTime": "2026-11-04T12:30:00Z"
+          },
+          "value": {
+            "doubleValue": 0.052063044317936159
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:29:00Z",
+            "endTime": "2026-11-04T12:29:00Z"
+          },
+          "value": {
+            "doubleValue": 0.048390943849576547
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:28:00Z",
+            "endTime": "2026-11-04T12:28:00Z"
+          },
+          "value": {
+            "doubleValue": 0.014759196568003258
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:27:00Z",
+            "endTime": "2026-11-04T12:27:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00066190760094697349
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:26:00Z",
+            "endTime": "2026-11-04T12:26:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00055940222039415255
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:25:00Z",
+            "endTime": "2026-11-04T12:25:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00061967780762744139
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:24:00Z",
+            "endTime": "2026-11-04T12:24:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00088385290480109307
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:23:00Z",
+            "endTime": "2026-11-04T12:23:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0011317786252793857
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:22:00Z",
+            "endTime": "2026-11-04T12:22:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00064157994405415286
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:21:00Z",
+            "endTime": "2026-11-04T12:21:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00058572980417608271
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:20:00Z",
+            "endTime": "2026-11-04T12:20:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0015453096654267837
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:19:00Z",
+            "endTime": "2026-11-04T12:19:00Z"
+          },
+          "value": {
+            "doubleValue": 0.022400529993974929
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:18:00Z",
+            "endTime": "2026-11-04T12:18:00Z"
+          },
+          "value": {
+            "doubleValue": 0.043182000759525212
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:17:00Z",
+            "endTime": "2026-11-04T12:17:00Z"
+          },
+          "value": {
+            "doubleValue": 0.033089876723873285
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:16:00Z",
+            "endTime": "2026-11-04T12:16:00Z"
+          },
+          "value": {
+            "doubleValue": 0.038789507614128936
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:15:00Z",
+            "endTime": "2026-11-04T12:15:00Z"
+          },
+          "value": {
+            "doubleValue": 0.033669638627440511
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:14:00Z",
+            "endTime": "2026-11-04T12:14:00Z"
+          },
+          "value": {
+            "doubleValue": 0.000653311841419995
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:13:00Z",
+            "endTime": "2026-11-04T12:13:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00098222383979762961
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:12:00Z",
+            "endTime": "2026-11-04T12:12:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0011235004392730729
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:11:00Z",
+            "endTime": "2026-11-04T12:11:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00106388466248259
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:10:00Z",
+            "endTime": "2026-11-04T12:10:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00097922185031254429
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:09:00Z",
+            "endTime": "2026-11-04T12:09:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00066965156175342606
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:08:00Z",
+            "endTime": "2026-11-04T12:08:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0014999334708561049
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:07:00Z",
+            "endTime": "2026-11-04T12:07:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0011148874559844381
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:06:00Z",
+            "endTime": "2026-11-04T12:06:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00099614522001098115
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:05:00Z",
+            "endTime": "2026-11-04T12:05:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0010226235422234394
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:04:00Z",
+            "endTime": "2026-11-04T12:04:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00072149318209082161
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:03:00Z",
+            "endTime": "2026-11-04T12:03:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00070057586610011583
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:02:00Z",
+            "endTime": "2026-11-04T12:02:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00082062628878705685
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:01:00Z",
+            "endTime": "2026-11-04T12:01:00Z"
+          },
+          "value": {
+            "doubleValue": 0.001037204421614351
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T12:00:00Z",
+            "endTime": "2026-11-04T12:00:00Z"
+          },
+          "value": {
+            "doubleValue": 0.015568388786235232
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:59:00Z",
+            "endTime": "2026-11-04T11:59:00Z"
+          },
+          "value": {
+            "doubleValue": 0.025628933230172398
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:58:00Z",
+            "endTime": "2026-11-04T11:58:00Z"
+          },
+          "value": {
+            "doubleValue": 0.025656615512350021
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:57:00Z",
+            "endTime": "2026-11-04T11:57:00Z"
+          },
+          "value": {
+            "doubleValue": 0.025783330159410728
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:56:00Z",
+            "endTime": "2026-11-04T11:56:00Z"
+          },
+          "value": {
+            "doubleValue": 0.022739766026773443
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:55:00Z",
+            "endTime": "2026-11-04T11:55:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0095036790319533611
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:54:00Z",
+            "endTime": "2026-11-04T11:54:00Z"
+          },
+          "value": {
+            "doubleValue": 0.000648179785475141
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:53:00Z",
+            "endTime": "2026-11-04T11:53:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0012490290270595968
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:52:00Z",
+            "endTime": "2026-11-04T11:52:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00068051895227417463
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:51:00Z",
+            "endTime": "2026-11-04T11:51:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00087522235314168022
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:50:00Z",
+            "endTime": "2026-11-04T11:50:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00057082964644968742
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:49:00Z",
+            "endTime": "2026-11-04T11:49:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00065145667117844953
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:48:00Z",
+            "endTime": "2026-11-04T11:48:00Z"
+          },
+          "value": {
+            "doubleValue": 0.000611651059388723
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:47:00Z",
+            "endTime": "2026-11-04T11:47:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00080331596362949789
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:46:00Z",
+            "endTime": "2026-11-04T11:46:00Z"
+          },
+          "value": {
+            "doubleValue": 0.012558759002688822
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:45:00Z",
+            "endTime": "2026-11-04T11:45:00Z"
+          },
+          "value": {
+            "doubleValue": 0.042532108827270237
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:44:00Z",
+            "endTime": "2026-11-04T11:44:00Z"
+          },
+          "value": {
+            "doubleValue": 0.045406499050945744
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:43:00Z",
+            "endTime": "2026-11-04T11:43:00Z"
+          },
+          "value": {
+            "doubleValue": 0.045428977595459073
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:42:00Z",
+            "endTime": "2026-11-04T11:42:00Z"
+          },
+          "value": {
+            "doubleValue": 0.030163238021518088
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:41:00Z",
+            "endTime": "2026-11-04T11:41:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0006710563713723792
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:40:00Z",
+            "endTime": "2026-11-04T11:40:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0010258714679811161
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:39:00Z",
+            "endTime": "2026-11-04T11:39:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0011229712272399044
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:38:00Z",
+            "endTime": "2026-11-04T11:38:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0016275930669503206
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:37:00Z",
+            "endTime": "2026-11-04T11:37:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0010008927637835698
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:36:00Z",
+            "endTime": "2026-11-04T11:36:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00056541258824335859
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:35:00Z",
+            "endTime": "2026-11-04T11:35:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0010231895536617704
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:34:00Z",
+            "endTime": "2026-11-04T11:34:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0010835187772345971
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:33:00Z",
+            "endTime": "2026-11-04T11:33:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0011193959285988972
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:32:00Z",
+            "endTime": "2026-11-04T11:32:00Z"
+          },
+          "value": {
+            "doubleValue": 0.001008187120090456
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:31:00Z",
+            "endTime": "2026-11-04T11:31:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0005717294542224731
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:30:00Z",
+            "endTime": "2026-11-04T11:30:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00062511500605645491
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:29:00Z",
+            "endTime": "2026-11-04T11:29:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00068031631912985648
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:28:00Z",
+            "endTime": "2026-11-04T11:28:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00068388088623628888
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:27:00Z",
+            "endTime": "2026-11-04T11:27:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0007090604651289646
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:26:00Z",
+            "endTime": "2026-11-04T11:26:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00055058016447288893
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:25:00Z",
+            "endTime": "2026-11-04T11:25:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00067547188853846283
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:24:00Z",
+            "endTime": "2026-11-04T11:24:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00071557280007949781
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:23:00Z",
+            "endTime": "2026-11-04T11:23:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0012804135152431999
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:22:00Z",
+            "endTime": "2026-11-04T11:22:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00079457956057732806
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:21:00Z",
+            "endTime": "2026-11-04T11:21:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00054861801527476611
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:20:00Z",
+            "endTime": "2026-11-04T11:20:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00067377222313338167
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:19:00Z",
+            "endTime": "2026-11-04T11:19:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00069702952375286665
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:18:00Z",
+            "endTime": "2026-11-04T11:18:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00067693811837648979
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:17:00Z",
+            "endTime": "2026-11-04T11:17:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00082275040389269015
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:16:00Z",
+            "endTime": "2026-11-04T11:16:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00061383371339158229
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:15:00Z",
+            "endTime": "2026-11-04T11:15:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0062748950129212569
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:14:00Z",
+            "endTime": "2026-11-04T11:14:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0078974236796752629
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:13:00Z",
+            "endTime": "2026-11-04T11:13:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0077839829209774315
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:12:00Z",
+            "endTime": "2026-11-04T11:12:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0076162951325559431
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:11:00Z",
+            "endTime": "2026-11-04T11:11:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0020016847549713013
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:10:00Z",
+            "endTime": "2026-11-04T11:10:00Z"
+          },
+          "value": {
+            "doubleValue": 0.005455360540475517
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:09:00Z",
+            "endTime": "2026-11-04T11:09:00Z"
+          },
+          "value": {
+            "doubleValue": 0.035985861384655891
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:08:00Z",
+            "endTime": "2026-11-04T11:08:00Z"
+          },
+          "value": {
+            "doubleValue": 0.053798690068718631
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:07:00Z",
+            "endTime": "2026-11-04T11:07:00Z"
+          },
+          "value": {
+            "doubleValue": 0.050894723490715534
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:06:00Z",
+            "endTime": "2026-11-04T11:06:00Z"
+          },
+          "value": {
+            "doubleValue": 0.043239399647017784
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:05:00Z",
+            "endTime": "2026-11-04T11:05:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0016978560167932321
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:04:00Z",
+            "endTime": "2026-11-04T11:04:00Z"
+          },
+          "value": {
+            "doubleValue": 0.006427707778148317
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:03:00Z",
+            "endTime": "2026-11-04T11:03:00Z"
+          },
+          "value": {
+            "doubleValue": 0.006549104273349076
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:02:00Z",
+            "endTime": "2026-11-04T11:02:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0058043870726674773
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:01:00Z",
+            "endTime": "2026-11-04T11:01:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0051060981359868484
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T11:00:00Z",
+            "endTime": "2026-11-04T11:00:00Z"
+          },
+          "value": {
+            "doubleValue": 0.000683709989388485
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:59:00Z",
+            "endTime": "2026-11-04T10:59:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00081661740470207649
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:58:00Z",
+            "endTime": "2026-11-04T10:58:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00080091119449655749
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:57:00Z",
+            "endTime": "2026-11-04T10:57:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00090710998650354521
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:56:00Z",
+            "endTime": "2026-11-04T10:56:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00084611252743620462
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:55:00Z",
+            "endTime": "2026-11-04T10:55:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00060971078552236847
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:54:00Z",
+            "endTime": "2026-11-04T10:54:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00071015381353715966
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:53:00Z",
+            "endTime": "2026-11-04T10:53:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0013756942539873288
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:52:00Z",
+            "endTime": "2026-11-04T10:52:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00075453459224081125
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:51:00Z",
+            "endTime": "2026-11-04T10:51:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00072151905207004706
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:50:00Z",
+            "endTime": "2026-11-04T10:50:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00055062675276348709
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:49:00Z",
+            "endTime": "2026-11-04T10:49:00Z"
+          },
+          "value": {
+            "doubleValue": 0.006001496533033941
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:48:00Z",
+            "endTime": "2026-11-04T10:48:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00701562212031652
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:47:00Z",
+            "endTime": "2026-11-04T10:47:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0070836443327698196
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:46:00Z",
+            "endTime": "2026-11-04T10:46:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0071819833357133064
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:45:00Z",
+            "endTime": "2026-11-04T10:45:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0016382213882126153
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:44:00Z",
+            "endTime": "2026-11-04T10:44:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00070133649587012946
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:43:00Z",
+            "endTime": "2026-11-04T10:43:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00072574417953540484
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:42:00Z",
+            "endTime": "2026-11-04T10:42:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00070532463980761413
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:41:00Z",
+            "endTime": "2026-11-04T10:41:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00069277903345816118
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:40:00Z",
+            "endTime": "2026-11-04T10:40:00Z"
+          },
+          "value": {
+            "doubleValue": 0.000551776235030922
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:39:00Z",
+            "endTime": "2026-11-04T10:39:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00086558274895642579
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:38:00Z",
+            "endTime": "2026-11-04T10:38:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0014132437177767404
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:37:00Z",
+            "endTime": "2026-11-04T10:37:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0006426809399724694
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:36:00Z",
+            "endTime": "2026-11-04T10:36:00Z"
+          },
+          "value": {
+            "doubleValue": 0.024869987536228225
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:35:00Z",
+            "endTime": "2026-11-04T10:35:00Z"
+          },
+          "value": {
+            "doubleValue": 0.031049549815382663
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:34:00Z",
+            "endTime": "2026-11-04T10:34:00Z"
+          },
+          "value": {
+            "doubleValue": 0.030466368677952143
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:33:00Z",
+            "endTime": "2026-11-04T10:33:00Z"
+          },
+          "value": {
+            "doubleValue": 0.030436921464746271
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:32:00Z",
+            "endTime": "2026-11-04T10:32:00Z"
+          },
+          "value": {
+            "doubleValue": 0.027912059445374223
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:31:00Z",
+            "endTime": "2026-11-04T10:31:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0077928301749968509
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:30:00Z",
+            "endTime": "2026-11-04T10:30:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00061180342446488388
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:29:00Z",
+            "endTime": "2026-11-04T10:29:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0006364642621550133
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:28:00Z",
+            "endTime": "2026-11-04T10:28:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00057453380789503289
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:27:00Z",
+            "endTime": "2026-11-04T10:27:00Z"
+          },
+          "value": {
+            "doubleValue": 0.000568295259170447
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:26:00Z",
+            "endTime": "2026-11-04T10:26:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00048639310744783438
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:25:00Z",
+            "endTime": "2026-11-04T10:25:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00055370405316224546
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:24:00Z",
+            "endTime": "2026-11-04T10:24:00Z"
+          },
+          "value": {
+            "doubleValue": 0.00055616503584141855
+          }
+        },
+        {
+          "interval": {
+            "startTime": "2026-11-04T10:23:00Z",
+            "endTime": "2026-11-04T10:23:00Z"
+          },
+          "value": {
+            "doubleValue": 0.0010724362942966673
+          }
+        }
+      ]
+    }
+  ],
+  "unit": "10^2.%"
+}
