@@ -284,13 +284,14 @@ func NewGRPCClient(ctx context.Context, opts ...option.ClientOption) (*Client, e
 	if newStorageConfig(opts...).rustCore {
 		// EXPERIMENTAL: the shared Rust core (rust_client.go), reading and listing over gRPC.
 		// The core has no DirectPath support: it always uses CloudPath. Credentials and
-		// endpoints resolve as for NewClient.
+		// endpoints resolve as for NewClient; gRPC-client settings are applied here.
 		c, err := NewClient(ctx, opts...)
 		if err != nil {
 			return nil, err
 		}
 		rustUseGRPC(c.tc)
 		c.rpcSystem = rpcSystemGRPC
+		c.grpcAppendableUploads = newStorageConfig(opts...).grpcAppendableUploads
 		return c, nil
 	}
 	tc, err := newGRPCStorageClient(ctx, withClientOptions(opts...))

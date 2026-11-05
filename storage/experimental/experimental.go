@@ -197,8 +197,7 @@ type GRPCKeepaliveConfig struct {
 // idempotency, uploads, checksums and error classification run in Rust, the same code for
 // every language SDK. Requires a binary built with `-tags gcsrust` and cgo on linux/amd64;
 // otherwise NewClient returns an error. Not supported (as with the gRPC client): HMAC keys,
-// Pub/Sub notifications, GetServiceAccount; MultiRangeDownloader and appendable uploads are
-// not wired up yet.
+// Pub/Sub notifications, GetServiceAccount; MultiRangeDownloader is not wired up yet.
 //
 // PROOF OF CONCEPT: not supported, may be removed at any time.
 func WithRustCore() option.ClientOption {

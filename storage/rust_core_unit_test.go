@@ -174,6 +174,15 @@ func TestRustUnitTransportSelection(t *testing.T) {
 		}
 		c.Close()
 	}
+	// gRPC-client options still apply when NewGRPCClient delegates to NewClient.
+	c, err := NewGRPCClient(ctx, option.WithoutAuthentication(), experimental.WithRustCore(), WithAppendableUploads())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if w := c.Bucket("b").Object("o").NewWriter(ctx); !w.Append {
+		t.Error("NewGRPCClient(WithRustCore, WithAppendableUploads): Writer.Append is false")
+	}
 }
 
 // Query -> storage.objects.list request: the same parameters httpStorageClient sends.
