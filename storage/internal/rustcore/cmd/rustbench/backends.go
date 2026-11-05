@@ -144,12 +144,19 @@ func lookupBackend(name string) (backend, error) {
 
 // newGoJSONHTTP1 builds go-json on a transport that never negotiates HTTP/2: a non-nil, empty
 // TLSNextProto disables net/http's automatic HTTP/2 (see net/http.Transport), and the
-// transport is not handed to x/net/http2 (which the default storage transport is).
+// transport is not handed to x/net/http2 (which the default storage transport is). Clone()
+// copies DefaultTransport's TLS config, whose ALPN offers h2 once DefaultTransport is set up
+// (Clone does that), so ALPN is limited to http/1.1: otherwise the server picks h2 and every
+// request fails with "malformed HTTP response".
 func newGoJSONHTTP1(ctx context.Context, opts ...option.ClientOption) (*storage.Client, error) {
 	base := http.DefaultTransport.(*http.Transport).Clone()
 	base.MaxIdleConnsPerHost = 100 // as the default storage transport
 	base.ForceAttemptHTTP2 = false
 	base.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+	if base.TLSClientConfig == nil {
+		base.TLSClientConfig = &tls.Config{}
+	}
+	base.TLSClientConfig.NextProtos = []string{"http/1.1"}
 	rt, err := htransport.NewTransport(ctx, base,
 		option.WithScopes(storage.ScopeFullControl, "https://www.googleapis.com/auth/cloud-platform"))
 	if err != nil {
