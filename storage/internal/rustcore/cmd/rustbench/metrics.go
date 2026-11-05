@@ -193,8 +193,27 @@ type envInfo struct {
 	Source             string `json:"source,omitempty"`   // $RUSTBENCH_SOURCE (set by the VM scripts)
 	DirectPathDisabled bool   `json:"directpath_disabled"`
 	Bucket             string `json:"bucket"`
+	ZonalBucket        string `json:"zonal_bucket,omitempty"`
 	Profile            string `json:"profile"`
 	Seed               int64  `json:"seed"`
+	MemTotalMiB        int64  `json:"mem_total_mib,omitempty"` // the machine's memory (VM memory metrics)
+}
+
+// memTotalMiB returns MemTotal from /proc/meminfo, in MiB (0 if unknown).
+func memTotalMiB() int64 {
+	b, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if v, ok := strings.CutPrefix(l, "MemTotal:"); ok {
+			if f := strings.Fields(v); len(f) > 0 {
+				kb, _ := strconv.ParseInt(f[0], 10, 64)
+				return kb / 1024
+			}
+		}
+	}
+	return 0
 }
 
 func collectEnv(ctx context.Context, o suiteOptions) *envInfo {
@@ -205,8 +224,10 @@ func collectEnv(ctx context.Context, o suiteOptions) *envInfo {
 		Source:             os.Getenv("RUSTBENCH_SOURCE"),
 		DirectPathDisabled: os.Getenv("GOOGLE_CLOUD_DISABLE_DIRECT_PATH") == "true",
 		Bucket:             o.bucket,
+		ZonalBucket:        o.zonalBucket,
 		Profile:            o.profile,
 		Seed:               o.seed,
+		MemTotalMiB:        memTotalMiB(),
 	}
 	e.Host, _ = os.Hostname()
 	if b, err := os.ReadFile("/proc/sys/kernel/osrelease"); err == nil {

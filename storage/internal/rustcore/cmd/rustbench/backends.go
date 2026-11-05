@@ -33,15 +33,18 @@ import (
 
 // Workloads.
 const (
-	wWrite   = "write"   // upload Size bytes per op (Writer)
-	wRead    = "read"    // download a whole Size-byte object per op (Reader)
-	wRange   = "range"   // download a random RangeSize window of a Size-byte object per op
-	wList    = "list"    // list every object under a dataset prefix per op (all pages)
-	wOpen    = "open"    // open a zero-length reader at a random offset of a Size-byte object, close it
-	wStrided = "strided" // download Ranges windows of RangeSize bytes, Stride apart, one reader per window
+	wWrite       = "write"        // upload Size bytes per op (Writer)
+	wRead        = "read"         // download a whole Size-byte object per op (Reader)
+	wRange       = "range"        // download a random RangeSize window of a Size-byte object per op
+	wList        = "list"         // list every object under a dataset prefix per op (all pages)
+	wOpen        = "open"         // open a zero-length reader at a random offset of a Size-byte object, close it
+	wStrided     = "strided"      // download Ranges windows of RangeSize bytes, Stride apart, one reader per window
+	wChunked     = "chunked"      // download the next RangeSize chunk of the worker's Size-byte object per op
+	wAppend      = "append"       // appendable upload of Size bytes to the zonal bucket per op (BidiWriteObject)
+	wListBuckets = "list-buckets" // list one page of PageSize buckets of the project per op
 )
 
-var workloads = []string{wWrite, wRead, wRange, wList, wOpen, wStrided}
+var workloads = []string{wWrite, wRead, wRange, wList, wOpen, wStrided, wChunked, wAppend, wListBuckets}
 
 // backend is one client configuration under test.
 type backend struct {
@@ -49,66 +52,76 @@ type backend struct {
 	engine    string // "go" (the Go SDK's own transports) or "rust" (the Rust core)
 	transport string // "json", "xml" or "grpc"
 	desc      string
-	newClient func(context.Context) (*storage.Client, error)
+	// newClient creates the client; opts are per-case options (e.g. the gRPC connection pool).
+	newClient func(context.Context, ...option.ClientOption) (*storage.Client, error)
 	// skip lists workloads this backend does not run, with the reason. A skipped pair would
 	// either be impossible or exactly repeat another backend's measurement.
 	skip map[string]string
 }
 
+const appendNeedsGRPC = "appendable uploads (BidiWriteObject) need a gRPC client"
+
 var backends = []backend{
 	{
 		name: "go-json", engine: "go", transport: "json",
 		desc: "NewClient + WithJSONReads: JSON API, Go's default HTTP transport (HTTP/2 when negotiated)",
-		newClient: func(ctx context.Context) (*storage.Client, error) {
-			return storage.NewClient(ctx, storage.WithJSONReads())
+		newClient: func(ctx context.Context, opts ...option.ClientOption) (*storage.Client, error) {
+			return storage.NewClient(ctx, append(opts, storage.WithJSONReads())...)
 		},
+		skip: map[string]string{wAppend: appendNeedsGRPC},
 	},
 	{
 		name: "go-json-h1", engine: "go", transport: "json",
 		desc:      "go-json restricted to HTTP/1.1, the protocol of the Rust SDK's JSON transport",
 		newClient: newGoJSONHTTP1,
+		skip:      map[string]string{wAppend: appendNeedsGRPC},
 	},
 	{
 		name: "go-xml", engine: "go", transport: "xml",
 		desc: "NewClient defaults: XML API reads (what most Go users run today)",
-		newClient: func(ctx context.Context) (*storage.Client, error) {
-			return storage.NewClient(ctx, storage.WithXMLReads())
+		newClient: func(ctx context.Context, opts ...option.ClientOption) (*storage.Client, error) {
+			return storage.NewClient(ctx, append(opts, storage.WithXMLReads())...)
 		},
 		skip: map[string]string{
-			wWrite: "NewClient uploads over the JSON API (= go-json)",
-			wList:  "NewClient lists over the JSON API (= go-json)",
+			wWrite:       "NewClient uploads over the JSON API (= go-json)",
+			wList:        "NewClient lists over the JSON API (= go-json)",
+			wListBuckets: "NewClient lists over the JSON API (= go-json)",
+			wAppend:      appendNeedsGRPC,
 		},
 	},
 	{
 		name: "go-grpc", engine: "go", transport: "grpc",
 		desc: "NewGRPCClient, CloudPath: ReadObject (server-streaming) reads, BidiWriteObject uploads",
-		newClient: func(ctx context.Context) (*storage.Client, error) {
-			return storage.NewGRPCClient(ctx)
+		newClient: func(ctx context.Context, opts ...option.ClientOption) (*storage.Client, error) {
+			return storage.NewGRPCClient(ctx, opts...)
 		},
 	},
 	{
 		name: "go-grpc-bidi", engine: "go", transport: "grpc",
 		desc: "go-grpc + WithGRPCBidiReads: BidiReadObject reads, the RPC the Rust SDK reads with",
-		newClient: func(ctx context.Context) (*storage.Client, error) {
-			return storage.NewGRPCClient(ctx, storage.WithGRPCBidiReads())
+		newClient: func(ctx context.Context, opts ...option.ClientOption) (*storage.Client, error) {
+			return storage.NewGRPCClient(ctx, append(opts, storage.WithGRPCBidiReads())...)
 		},
 		skip: map[string]string{
-			wWrite: "bidi reads do not change uploads (= go-grpc)",
-			wList:  "bidi reads do not change listing (= go-grpc)",
+			wWrite:       "bidi reads do not change uploads (= go-grpc)",
+			wAppend:      "bidi reads do not change uploads (= go-grpc)",
+			wList:        "bidi reads do not change listing (= go-grpc)",
+			wListBuckets: "bidi reads do not change listing (= go-grpc)",
 		},
 	},
 	{
 		name: "rust-json", engine: "rust", transport: "json",
 		desc: "NewClient + WithRustCore: every operation in the Rust core, JSON API over HTTP/1.1",
-		newClient: func(ctx context.Context) (*storage.Client, error) {
-			return storage.NewClient(ctx, experimental.WithRustCore())
+		newClient: func(ctx context.Context, opts ...option.ClientOption) (*storage.Client, error) {
+			return storage.NewClient(ctx, append(opts, experimental.WithRustCore())...)
 		},
+		skip: map[string]string{wAppend: appendNeedsGRPC},
 	},
 	{
 		name: "rust-grpc", engine: "rust", transport: "grpc",
-		desc: "NewGRPCClient + WithRustCore: BidiReadObject reads and v2 ListObjects over gRPC (CloudPath)",
-		newClient: func(ctx context.Context) (*storage.Client, error) {
-			return storage.NewGRPCClient(ctx, experimental.WithRustCore())
+		desc: "NewGRPCClient + WithRustCore: BidiReadObject reads, appendable BidiWriteObject uploads and v2 listing over gRPC (CloudPath)",
+		newClient: func(ctx context.Context, opts ...option.ClientOption) (*storage.Client, error) {
+			return storage.NewGRPCClient(ctx, append(opts, experimental.WithRustCore())...)
 		},
 		skip: map[string]string{
 			wWrite: "the Rust SDK (1.20) has no gRPC upload for standard buckets; uploads use the JSON API (= rust-json)",
@@ -132,7 +145,7 @@ func lookupBackend(name string) (backend, error) {
 // newGoJSONHTTP1 builds go-json on a transport that never negotiates HTTP/2: a non-nil, empty
 // TLSNextProto disables net/http's automatic HTTP/2 (see net/http.Transport), and the
 // transport is not handed to x/net/http2 (which the default storage transport is).
-func newGoJSONHTTP1(ctx context.Context) (*storage.Client, error) {
+func newGoJSONHTTP1(ctx context.Context, opts ...option.ClientOption) (*storage.Client, error) {
 	base := http.DefaultTransport.(*http.Transport).Clone()
 	base.MaxIdleConnsPerHost = 100 // as the default storage transport
 	base.ForceAttemptHTTP2 = false
@@ -142,7 +155,7 @@ func newGoJSONHTTP1(ctx context.Context) (*storage.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return storage.NewClient(ctx, option.WithHTTPClient(&http.Client{Transport: rt}), storage.WithJSONReads())
+	return storage.NewClient(ctx, append(opts, option.WithHTTPClient(&http.Client{Transport: rt}), storage.WithJSONReads())...)
 }
 
 // benchCase is one workload configuration. Every op of a case does the same work on every
@@ -161,12 +174,27 @@ type benchCase struct {
 	Delimiter   string `json:"delimiter,omitempty"`  // list: "/" lists the dataset's 100 directories
 	Desc        string `json:"desc,omitempty"`
 
-	Sources   int   `json:"sources,omitempty"`    // read, range, open, strided: source objects (default datasetCount(Size))
+	Sources   int   `json:"sources,omitempty"`    // read, range, open, strided, chunked: source objects (default datasetCount(Size))
 	Ranges    int   `json:"ranges,omitempty"`     // strided: windows per op
 	Stride    int64 `json:"stride,omitempty"`     // strided: distance between the starts of two windows
 	Parallel  bool  `json:"parallel,omitempty"`   // strided: all windows' readers at once (default: one after the other)
 	CopyIO    bool  `json:"copy_io,omitempty"`    // drain readers with io.Copy (Reader.WriteTo) instead of IOBuf-sized Read calls
 	DurationS int   `json:"duration_s,omitempty"` // measured phase length in seconds (default: Ops ops per worker)
+
+	ConnPool      int      `json:"conn_pool,omitempty"`       // gRPC backends: option.WithGRPCConnectionPool (default: the client's, 1)
+	FirstPageOnly bool     `json:"first_page_only,omitempty"` // list: one page (one RPC) per op instead of the whole listing
+	Backends      []string `json:"backends,omitempty"`        // only these backends run the case (default: all that support it)
+	// write, append: each worker overwrites one object instead of creating a new one per op, so
+	// the bucket holds at most Concurrency objects (zonal buckets have a per-zone storage quota).
+	ReuseNames bool `json:"reuse_names,omitempty"`
+}
+
+// runsOn reports whether backend b runs case c.
+func (c benchCase) runsOn(b backend) bool {
+	if _, skip := b.skip[c.Workload]; skip {
+		return false
+	}
+	return len(c.Backends) == 0 || slices.Contains(c.Backends, b.name)
 }
 
 // sources is the number of dataset objects a read-type case reads from.
@@ -191,7 +219,8 @@ const (
 
 // profiles: "default" is the full comparison (about an hour for 5 rounds on a 16-vCPU VM),
 // "quick" a smoke test of the whole pipeline (minutes), "ssb" the shared benchmarks' read
-// workloads ("ssb-smoke": the same for 15 seconds each).
+// workloads, "worklog" the SDK consolidation POCs' benchmark plan (the "-smoke" variants: the
+// same for 15 seconds each).
 var profiles = map[string][]benchCase{
 	"default": {
 		{Name: "read-64KiB-c16", Workload: wRead, Size: 64 * kib, Concurrency: 16, Ops: 100, Warmup: 5,
@@ -253,14 +282,48 @@ var profiles = map[string][]benchCase{
 			CopyIO: true, DurationS: 240,
 			Desc: "one NewRangeReader per 8 KiB range"},
 	},
+	// The SDK consolidation POCs' benchmark plan: the three shared-benchmark workloads above
+	// (plus Go's non-bidi gRPC reads as the baseline for the two read workloads), then 48-thread
+	// BidiRead and BidiWrite phases of 5 minutes each that try to saturate the NIC, and listing
+	// of 100 objects and 100 buckets, all over gRPC. BidiWrite runs as appendable uploads to a
+	// zonal bucket (-zonal-bucket): the Rust SDK's only gRPC upload. Run the suite with
+	// -cooldown 60s so that the 1-minute VM metrics can be attributed to each phase.
+	"worklog": {
+		{Name: "open", Workload: wOpen, Size: 100 * kib, Sources: 8, Concurrency: 1, Warmup: 5, DurationS: 240,
+			Backends: []string{"go-grpc-bidi", "rust-grpc"},
+			Desc:     "NewRangeReader(random offset, 0) + Close: open a BidiReadObject stream and wait for the first response (with the object)"},
+		{Name: "read50x2x4", Workload: wStrided, Size: 200 * mib, Sources: 1, Ranges: 50, RangeSize: 2 * mib, Stride: 4 * mib,
+			Concurrency: 1, Warmup: 1, CopyIO: true, DurationS: 240, Backends: []string{"go-grpc", "go-grpc-bidi", "rust-grpc"},
+			Desc: "one NewRangeReader per range, one after the other"},
+		{Name: "read50x2x4-parallel", Workload: wStrided, Size: 200 * mib, Sources: 1, Ranges: 50, RangeSize: 2 * mib, Stride: 4 * mib,
+			Parallel: true, Concurrency: 1, Warmup: 1, CopyIO: true, DurationS: 240, Backends: []string{"go-grpc", "go-grpc-bidi", "rust-grpc"},
+			Desc: "all 50 range readers at once"},
+		{Name: "random8k", Workload: wRange, Size: 100 * mib, Sources: 1, RangeSize: 8 * kib, Concurrency: 1, Warmup: 5,
+			CopyIO: true, DurationS: 240, Backends: []string{"go-grpc", "go-grpc-bidi", "rust-grpc"},
+			Desc: "one NewRangeReader per 8 KiB range"},
+		{Name: "bidiread-16MiB-c48", Workload: wChunked, Size: 200 * mib, RangeSize: 16 * mib, Sources: 48, Concurrency: 48,
+			Warmup: 1, CopyIO: true, DurationS: 300, ConnPool: 48, Backends: []string{"go-grpc-bidi", "rust-grpc"},
+			Desc: "each worker reads its own 200 MiB object in 16 MiB ranges (one BidiReadObject range reader each), front to back, again and again"},
+		{Name: "bidiwrite-200MiB-c48", Workload: wAppend, Size: 200 * mib, Concurrency: 48, Warmup: 1, DurationS: 300, ConnPool: 48,
+			ReuseNames: true, Backends: []string{"go-grpc", "rust-grpc"},
+			Desc: "appendable upload of a 200 MiB object to the zonal bucket per op (BidiWriteObject), finalized on Close; each worker overwrites its own object"},
+		{Name: "list-objects-100", Workload: wList, Objects: 100, PageSize: 100, FirstPageOnly: true, Concurrency: 1, Warmup: 3,
+			DurationS: 120, Backends: []string{"go-grpc", "rust-grpc"},
+			Desc: "one ListObjects RPC returning 100 objects"},
+		{Name: "list-buckets-100", Workload: wListBuckets, PageSize: 100, Concurrency: 1, Warmup: 3, DurationS: 120,
+			Backends: []string{"go-grpc", "rust-grpc"},
+			Desc:     "one ListBuckets RPC returning 100 buckets"},
+	},
 }
 
 func init() {
-	smoke := slices.Clone(profiles["ssb"])
-	for i := range smoke {
-		smoke[i].DurationS, smoke[i].Warmup = 15, min(smoke[i].Warmup, 1)
+	for _, p := range []string{"ssb", "worklog"} {
+		smoke := slices.Clone(profiles[p])
+		for i := range smoke {
+			smoke[i].DurationS, smoke[i].Warmup = 15, min(smoke[i].Warmup, 1)
+		}
+		profiles[p+"-smoke"] = smoke
 	}
-	profiles["ssb-smoke"] = smoke
 }
 
 func profileNames() []string {
@@ -312,17 +375,23 @@ func printMatrix(w io.Writer, profile string) {
 
 	fmt.Fprintf(w, "\nCases of profile %q:\n", profile)
 	tw = tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "CASE\tWORKLOAD\tSIZE\tRANGE\tWORKERS\tOPS/WORKER\tIO BUF\tDESCRIPTION")
+	fmt.Fprintln(tw, "CASE\tWORKLOAD\tSIZE\tRANGE\tWORKERS\tOPS/WORKER\tIO BUF\tGRPC CONNS\tBACKENDS\tDESCRIPTION")
 	for _, c := range cases {
 		size, rng, iobuf := humanBytes(c.Size), humanBytes(c.RangeSize), humanBytes(int64(c.ioBuf()))
-		if c.Workload == wList {
+		switch c.Workload {
+		case wList:
 			size, iobuf = fmt.Sprintf("%d objects", c.Objects), "-"
-		}
-		if c.Workload == wStrided {
+		case wListBuckets:
+			size, iobuf = fmt.Sprintf("%d buckets", c.PageSize), "-"
+		case wStrided:
 			rng = fmt.Sprintf("%d x %s, stride %s", c.Ranges, humanBytes(c.RangeSize), humanBytes(c.Stride))
 			if c.Parallel {
 				rng += ", parallel"
 			}
+		case wChunked:
+			rng = humanBytes(c.RangeSize) + " chunks"
+		case wAppend:
+			size += " (zonal bucket)"
 		}
 		if c.CopyIO {
 			iobuf = "io.Copy"
@@ -331,8 +400,18 @@ func printMatrix(w io.Writer, profile string) {
 		if c.DurationS > 0 {
 			ops = fmt.Sprintf("%ds (+%d warmup)", c.DurationS, c.Warmup)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n",
-			c.Name, c.Workload, size, rng, c.Concurrency, ops, iobuf, c.Desc)
+		conns := "default"
+		if c.ConnPool > 0 {
+			conns = fmt.Sprint(c.ConnPool)
+		}
+		var bes []string
+		for _, b := range backends {
+			if c.runsOn(b) {
+				bes = append(bes, b.name)
+			}
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%s\n",
+			c.Name, c.Workload, size, rng, c.Concurrency, ops, iobuf, conns, strings.Join(bes, ","), c.Desc)
 	}
 	tw.Flush()
 }

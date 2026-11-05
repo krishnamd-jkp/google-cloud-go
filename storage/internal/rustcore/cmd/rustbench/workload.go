@@ -29,6 +29,7 @@ import (
 	"cloud.google.com/go/storage"
 	"cloud.google.com/go/storage/experimental"
 	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 )
 
 // opTimeout bounds every single operation, so a hung request fails the op instead of the run.
@@ -43,14 +44,23 @@ type opResult struct {
 // opFunc performs one operation. i < 0 marks warmup ops.
 type opFunc func(ctx context.Context, worker, i int) (opResult, error)
 
+// target is where a case runs: the bucket (datasets, uploads), the zonal bucket (appendable
+// uploads), the project (bucket listing) and the object name prefix.
+type target struct {
+	bucket, zonalBucket, project, prefix string
+}
+
 // runCase measures one case with one backend in this process.
-func runCase(ctx context.Context, bucket, prefix, backendName string, c benchCase) (*result, error) {
+func runCase(ctx context.Context, t target, backendName string, c benchCase) (*result, error) {
 	be, err := lookupBackend(backendName)
 	if err != nil {
 		return nil, err
 	}
 	if why, skip := be.skip[c.Workload]; skip {
 		return nil, fmt.Errorf("pair is skipped: %s", why)
+	}
+	if !c.runsOn(be) {
+		return nil, fmt.Errorf("case %s runs only on %v", c.Name, c.Backends)
 	}
 	if c.Concurrency < 1 || (c.Ops < 1 && c.DurationS <= 0) {
 		return nil, errors.New("concurrency must be at least 1, and ops too unless duration_s is set")
@@ -61,11 +71,20 @@ func runCase(ctx context.Context, bucket, prefix, backendName string, c benchCas
 	if c.Workload == wStrided && c.Parallel && !c.CopyIO {
 		return nil, errors.New("strided: parallel windows need copy_io (one application buffer per worker)")
 	}
+	if c.Workload == wChunked && (c.RangeSize < 1 || c.RangeSize > c.Size) {
+		return nil, fmt.Errorf("chunked: chunks of %d bytes do not fit in %d bytes", c.RangeSize, c.Size)
+	}
+	if c.Workload == wAppend && t.zonalBucket == "" {
+		return nil, errors.New("append: -zonal-bucket (or $RUSTBENCH_ZONAL_BUCKET) is required")
+	}
+	if c.Workload == wListBuckets && (t.project == "" || c.PageSize < 1) {
+		return nil, errors.New("list-buckets: -project (or $RUSTBENCH_PROJECT) and page_size are required")
+	}
 
 	// Harness memory first, so that the baseline RSS includes it and peak - baseline is the
 	// memory the client itself used.
 	var payload []byte
-	if c.Workload == wWrite {
+	if c.Workload == wWrite || c.Workload == wAppend {
 		payload = randomBytes(int(c.Size), 1)
 	}
 	bufs := make([][]byte, c.Concurrency)
@@ -75,19 +94,26 @@ func runCase(ctx context.Context, bucket, prefix, backendName string, c benchCas
 	runtime.GC()
 	rssBase := procStatusKB("VmRSS")
 
+	var copts []option.ClientOption
+	if c.ConnPool > 0 && be.transport == "grpc" {
+		copts = append(copts, option.WithGRPCConnectionPool(c.ConnPool))
+	}
 	t0 := time.Now()
-	client, err := be.newClient(ctx)
+	client, err := be.newClient(ctx, copts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating the client: %w", err)
 	}
 	defer client.Close()
 	initMs := float64(time.Since(t0)) / float64(time.Millisecond)
 
-	w := &workload{client: client, bkt: client.Bucket(bucket), prefix: prefix, be: be, c: c, payload: payload, bufs: bufs,
-		token: fmt.Sprintf("%d", time.Now().UnixNano())}
+	w := &workload{client: client, bkt: client.Bucket(t.bucket), wbkt: client.Bucket(t.bucket), project: t.project,
+		prefix: t.prefix, be: be, c: c, payload: payload, bufs: bufs, token: fmt.Sprintf("%d", time.Now().UnixNano())}
+	if c.Workload == wAppend {
+		w.wbkt = client.Bucket(t.zonalBucket)
+	}
 	var op opFunc
 	switch c.Workload {
-	case wWrite:
+	case wWrite, wAppend:
 		op = w.write
 	case wRead:
 		op = w.read
@@ -99,6 +125,10 @@ func runCase(ctx context.Context, bucket, prefix, backendName string, c benchCas
 		op = w.open
 	case wStrided:
 		op = w.strided
+	case wChunked:
+		op = w.chunked
+	case wListBuckets:
+		op = w.listBuckets
 	default:
 		return nil, fmt.Errorf("unknown workload %q", c.Workload)
 	}
@@ -249,7 +279,9 @@ func runWorkers(ctx context.Context, n, ops int, deadline time.Time, op opFunc, 
 
 type workload struct {
 	client  *storage.Client
-	bkt     *storage.BucketHandle
+	bkt     *storage.BucketHandle // datasets
+	wbkt    *storage.BucketHandle // uploads (the zonal bucket for appendable uploads)
+	project string
 	prefix  string
 	be      backend
 	c       benchCase
@@ -261,13 +293,20 @@ type workload struct {
 	written []string
 }
 
-// write uploads the payload in IOBuf-sized Write calls.
+// write uploads the payload in IOBuf-sized Write calls. Appendable uploads (wAppend) create a
+// new appendable object in the zonal bucket and finalize it on Close.
 func (w *workload) write(ctx context.Context, worker, i int) (opResult, error) {
 	name := fmt.Sprintf("%s/write/%s/%s/%s/w%02d-%05d", w.prefix, w.c.Name, w.be.name, w.token, worker, i)
 	if i < 0 {
 		name = fmt.Sprintf("%s/write/%s/%s/%s/w%02d-warm%d", w.prefix, w.c.Name, w.be.name, w.token, worker, -i)
 	}
-	ow := w.bkt.Object(name).NewWriter(ctx)
+	if w.c.ReuseNames {
+		name = fmt.Sprintf("%s/write/%s/%s/%s/w%02d", w.prefix, w.c.Name, w.be.name, w.token, worker)
+	}
+	ow := w.wbkt.Object(name).NewWriter(ctx)
+	if w.c.Workload == wAppend {
+		ow.Append, ow.FinalizeOnClose = true, true
+	}
 	step := w.c.ioBuf()
 	for off := 0; off < len(w.payload); off += step {
 		if _, err := ow.Write(w.payload[off:min(off+step, len(w.payload))]); err != nil {
@@ -277,7 +316,9 @@ func (w *workload) write(ctx context.Context, worker, i int) (opResult, error) {
 	}
 	err := ow.Close()
 	w.mu.Lock()
-	w.written = append(w.written, name) // also after a failed Close: the object may exist
+	if !w.c.ReuseNames || i <= 0 { // also after a failed Close: the object may exist; duplicates are harmless
+		w.written = append(w.written, name)
+	}
 	w.mu.Unlock()
 	if err != nil {
 		return opResult{}, fmt.Errorf("close %s: %w", name, err)
@@ -364,6 +405,15 @@ func (w *workload) strided(ctx context.Context, worker, i int) (opResult, error)
 	return res, nil
 }
 
+// chunked downloads the next RangeSize chunk of the worker's own dataset object: each worker
+// reads its object front to back in RangeSize chunks, one range reader per chunk, and starts
+// over at the end. A tail shorter than RangeSize is skipped, so every op moves RangeSize bytes.
+func (w *workload) chunked(ctx context.Context, worker, i int) (opResult, error) {
+	o := w.bkt.Object(readObjectName(w.prefix, w.c.Size, worker%w.c.sources()))
+	k := int64(max(i, 0)) % (w.c.Size / w.c.RangeSize)
+	return w.download(ctx, o, k*w.c.RangeSize, w.c.RangeSize, w.c.RangeSize, w.bufs[worker])
+}
+
 func (w *workload) download(ctx context.Context, o *storage.ObjectHandle, off, length, want int64, buf []byte) (opResult, error) {
 	t0 := time.Now()
 	r, err := o.NewRangeReader(ctx, off, length)
@@ -416,7 +466,7 @@ func (d *discard) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// list lists the whole list dataset (every page).
+// list lists the whole list dataset (every page), or only its first page (FirstPageOnly).
 func (w *workload) list(ctx context.Context, worker, i int) (opResult, error) {
 	t0 := time.Now()
 	q := &storage.Query{Prefix: listPrefix(w.prefix, w.c.Objects), Delimiter: w.c.Delimiter}
@@ -432,7 +482,7 @@ func (w *workload) list(ctx context.Context, worker, i int) (opResult, error) {
 			res.ttfb = time.Since(t0)
 		}
 		res.entries += int64(len(page))
-		if tok == "" {
+		if tok == "" || w.c.FirstPageOnly {
 			break
 		}
 	}
@@ -440,10 +490,27 @@ func (w *workload) list(ctx context.Context, worker, i int) (opResult, error) {
 	if w.c.Delimiter != "" {
 		want = int64(listDirs(w.c.Objects))
 	}
+	if w.c.FirstPageOnly {
+		want = min(want, int64(w.c.PageSize))
+	}
 	if res.entries != want {
 		return opResult{}, fmt.Errorf("list %s: got %d entries, want %d (run `rustbench setup`)", q.Prefix, res.entries, want)
 	}
 	return res, nil
+}
+
+// listBuckets lists one page of PageSize buckets of the project: one ListBuckets RPC.
+func (w *workload) listBuckets(ctx context.Context, worker, i int) (opResult, error) {
+	t0 := time.Now()
+	p := iterator.NewPager(w.client.Buckets(ctx, w.project), w.c.PageSize, "")
+	var page []*storage.BucketAttrs
+	if _, err := p.NextPage(&page); err != nil {
+		return opResult{}, fmt.Errorf("list buckets of %s: %w", w.project, err)
+	}
+	if len(page) != w.c.PageSize {
+		return opResult{}, fmt.Errorf("list buckets of %s: got %d buckets, want %d (the project needs at least that many)", w.project, len(page), w.c.PageSize)
+	}
+	return opResult{entries: int64(len(page)), ttfb: time.Since(t0)}, nil
 }
 
 // deleteWritten removes the objects this process uploaded.
@@ -455,7 +522,7 @@ func (w *workload) deleteWritten(ctx context.Context) {
 		return
 	}
 	failed := parallelDo(ctx, len(names), 32, func(ctx context.Context, i int) error {
-		err := w.bkt.Object(names[i]).Delete(ctx)
+		err := w.wbkt.Object(names[i]).Delete(ctx)
 		if errors.Is(err, storage.ErrObjectNotExist) {
 			return nil
 		}

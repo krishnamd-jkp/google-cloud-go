@@ -29,6 +29,9 @@
 //	rustbench run     -bucket B -prefix P -backend X -case NAME   one case in this process
 //	rustbench cleanup -bucket B -prefix P              delete every object under the prefix
 //
+// suite and run also take -zonal-bucket (appendable uploads, the "append" workload) and
+// -project (the "list-buckets" workload; default: the VM's project).
+//
 // suite runs every (case, backend) pair of a profile in its own child process (`rustbench run`),
 // in a new random order every round, and appends one JSON line per pair and round to -out.
 // CPU time and memory are per process, so they cover everything a client does (Go and Rust
@@ -45,6 +48,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"cloud.google.com/go/compute/metadata"
 )
 
 func usage() {
@@ -92,7 +97,7 @@ func main() {
 		}
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ExitOnError)
-		bucket, prefix := bucketFlags(fs)
+		tf := targetFlags(fs)
 		backend := fs.String("backend", "", "backend name (see `rustbench matrix`)")
 		caseName := fs.String("case", "", "case name from -profile (or use -case-json)")
 		caseJSON := fs.String("case-json", "", "the case as JSON (used by suite)")
@@ -104,7 +109,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		res, err := runCase(ctx, mustBucket(*bucket), *prefix, *backend, c)
+		res, err := runCase(ctx, tf.resolve(ctx), *backend, c)
 		if err != nil {
 			log.Fatalf("%s/%s: %v", c.Name, *backend, err)
 		}
@@ -114,7 +119,7 @@ func main() {
 		}
 	case "suite":
 		fs := flag.NewFlagSet("suite", flag.ExitOnError)
-		bucket, prefix := bucketFlags(fs)
+		tf := targetFlags(fs)
 		var o suiteOptions
 		fs.StringVar(&o.profile, "profile", "default", "profile: "+strings.Join(profileNames(), " | "))
 		fs.IntVar(&o.rounds, "rounds", 5, "rounds; every round runs every pair once, in a new random order")
@@ -127,7 +132,7 @@ func main() {
 		fs.DurationVar(&o.timeout, "timeout", 30*time.Minute, "timeout per child process")
 		fs.DurationVar(&o.cooldown, "cooldown", 2*time.Second, "pause between child processes")
 		fs.Parse(args)
-		o.bucket, o.prefix = mustBucket(*bucket), *prefix
+		o.target = tf.resolve(ctx)
 		if err := runSuite(ctx, o); err != nil {
 			log.Fatal(err)
 		}
@@ -140,6 +145,32 @@ func bucketFlags(fs *flag.FlagSet) (bucket, prefix *string) {
 	bucket = fs.String("bucket", os.Getenv("RUSTBENCH_BUCKET"), "bucket (default $RUSTBENCH_BUCKET)")
 	prefix = fs.String("prefix", "rustbench", "object name prefix for datasets and written objects")
 	return bucket, prefix
+}
+
+type targetFlagValues struct {
+	bucket, prefix, zonalBucket, project *string
+}
+
+// targetFlags adds the flags of a target: the bucket and prefix, the zonal bucket of appendable
+// uploads and the project of bucket listing.
+func targetFlags(fs *flag.FlagSet) targetFlagValues {
+	var v targetFlagValues
+	v.bucket, v.prefix = bucketFlags(fs)
+	v.zonalBucket = fs.String("zonal-bucket", os.Getenv("RUSTBENCH_ZONAL_BUCKET"),
+		"zonal bucket for appendable uploads (default $RUSTBENCH_ZONAL_BUCKET)")
+	v.project = fs.String("project", os.Getenv("RUSTBENCH_PROJECT"),
+		"project whose buckets list-buckets lists (default $RUSTBENCH_PROJECT, else the VM's project)")
+	return v
+}
+
+func (v targetFlagValues) resolve(ctx context.Context) target {
+	t := target{bucket: mustBucket(*v.bucket), prefix: *v.prefix, zonalBucket: *v.zonalBucket, project: *v.project}
+	if t.project == "" && metadata.OnGCE() {
+		mctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		t.project, _ = metadata.ProjectIDWithContext(mctx)
+	}
+	return t
 }
 
 func mustBucket(b string) string {

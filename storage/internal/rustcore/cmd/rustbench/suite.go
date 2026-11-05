@@ -31,12 +31,13 @@ import (
 )
 
 type suiteOptions struct {
-	bucket, prefix, profile, out string
-	backends, cases, runID       string
-	rounds                       int
-	seed                         int64
-	setup                        bool
-	timeout, cooldown            time.Duration
+	target
+	profile, out           string
+	backends, cases, runID string
+	rounds                 int
+	seed                   int64
+	setup                  bool
+	timeout, cooldown      time.Duration
 }
 
 type pair struct {
@@ -67,7 +68,7 @@ func runSuite(ctx context.Context, o suiteOptions) error {
 	var pairs []pair
 	for _, c := range cases {
 		for _, b := range bes {
-			if _, skip := b.skip[c.Workload]; !skip {
+			if c.runsOn(b) {
 				pairs = append(pairs, pair{c, b})
 			}
 		}
@@ -137,8 +138,8 @@ func runChild(ctx context.Context, exe string, o suiteOptions, p pair, round int
 	}
 	cctx, cancel := context.WithTimeout(ctx, o.timeout)
 	defer cancel()
-	cmd := exec.CommandContext(cctx, exe, "run", "-bucket", o.bucket, "-prefix", o.prefix, "-backend", p.b.name,
-		"-case-json", string(cj), "-run-id", o.runID, "-round", strconv.Itoa(round))
+	cmd := exec.CommandContext(cctx, exe, "run", "-bucket", o.bucket, "-zonal-bucket", o.zonalBucket, "-project", o.project,
+		"-prefix", o.prefix, "-backend", p.b.name, "-case-json", string(cj), "-run-id", o.runID, "-round", strconv.Itoa(round))
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {

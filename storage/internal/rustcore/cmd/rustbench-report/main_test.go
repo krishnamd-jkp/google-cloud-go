@@ -48,7 +48,7 @@ func TestReport(t *testing.T) {
 		}
 	}
 	var out bytes.Buffer
-	writeReport(&out, "r1", rs, nil)
+	writeReport(&out, "r1", rs, nil, nil)
 	got := out.String()
 	for _, want := range []string{
 		"`n2-standard-16` in `us-central1-a`",
@@ -110,7 +110,7 @@ func TestReportVMCPU(t *testing.T) {
 		t.Errorf("Go phase: mean %v over %d samples, want 0.002 over 3 (10:07, 10:08, 10:09)", u, n)
 	}
 	var out bytes.Buffer
-	writeReport(&out, "t1", rs, samples)
+	writeReport(&out, "t1", rs, samples, nil)
 	got := out.String()
 	for _, want := range []string{
 		"| open | rust-grpc vs go-grpc-bidi (same RPC (BidiReadObject)) | 0.50x |", // ops/s: 5 / 10

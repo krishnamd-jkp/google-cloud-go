@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -40,11 +41,11 @@ func TestProfilesAreConsistent(t *testing.T) {
 				t.Errorf("%s/%s: concurrency %d, ops %d, duration %ds, warmup %d", name, c.Name, c.Concurrency, c.Ops, c.DurationS, c.Warmup)
 			}
 			switch c.Workload {
-			case wRead, wWrite, wOpen:
+			case wRead, wWrite, wOpen, wAppend:
 				if c.Size <= 0 {
 					t.Errorf("%s/%s: size %d", name, c.Name, c.Size)
 				}
-			case wRange:
+			case wRange, wChunked:
 				if c.RangeSize <= 0 || c.RangeSize > c.Size {
 					t.Errorf("%s/%s: range %d of %d", name, c.Name, c.RangeSize, c.Size)
 				}
@@ -57,8 +58,60 @@ func TestProfilesAreConsistent(t *testing.T) {
 				if c.Objects <= 0 || c.PageSize <= 0 || c.PageSize > 1000 {
 					t.Errorf("%s/%s: objects %d, page size %d", name, c.Name, c.Objects, c.PageSize)
 				}
+			case wListBuckets:
+				if c.PageSize <= 0 || c.PageSize > 1000 {
+					t.Errorf("%s/%s: page size %d", name, c.Name, c.PageSize)
+				}
 			default:
 				t.Errorf("%s/%s: unknown workload %q", name, c.Name, c.Workload)
+			}
+			runs := 0
+			for _, b := range backends {
+				if c.runsOn(b) {
+					runs++
+				}
+			}
+			for _, bn := range c.Backends {
+				if b, err := lookupBackend(bn); err != nil || !c.runsOn(b) {
+					t.Errorf("%s/%s: backend %q is unknown or skips %s", name, c.Name, bn, c.Workload)
+				}
+			}
+			if runs == 0 {
+				t.Errorf("%s/%s: no backend runs it", name, c.Name)
+			}
+		}
+	}
+}
+
+// The worklog profile mirrors the SDK consolidation POCs' benchmark plan.
+func TestWorklogProfile(t *testing.T) {
+	cases := map[string]benchCase{}
+	for _, c := range mustProfile("worklog") {
+		cases[c.Name] = c
+	}
+	for _, name := range []string{"open", "read50x2x4", "read50x2x4-parallel", "random8k"} {
+		if c, ok := cases[name]; !ok || c.Concurrency != 1 || c.ConnPool != 0 {
+			t.Errorf("%s = %+v, want the ssb case (one worker, default connections)", name, c)
+		}
+	}
+	if c := cases["bidiread-16MiB-c48"]; c.Workload != wChunked || c.Size != 200*mib || c.RangeSize != 16*mib ||
+		c.Concurrency != 48 || c.Sources != 48 || c.DurationS != 300 || c.ConnPool != 48 {
+		t.Errorf("bidiread-16MiB-c48 = %+v", c)
+	}
+	if c := cases["bidiwrite-200MiB-c48"]; c.Workload != wAppend || c.Size != 200*mib || c.Concurrency != 48 ||
+		c.DurationS != 300 || c.ConnPool != 48 {
+		t.Errorf("bidiwrite-200MiB-c48 = %+v", c)
+	}
+	if c := cases["list-objects-100"]; c.Workload != wList || c.Objects != 100 || c.PageSize != 100 || !c.FirstPageOnly {
+		t.Errorf("list-objects-100 = %+v", c)
+	}
+	if c := cases["list-buckets-100"]; c.Workload != wListBuckets || c.PageSize != 100 {
+		t.Errorf("list-buckets-100 = %+v", c)
+	}
+	for _, c := range cases {
+		for _, b := range c.Backends {
+			if !strings.Contains(b, "grpc") {
+				t.Errorf("%s runs on %s: the worklog cases are gRPC-only", c.Name, b)
 			}
 		}
 	}
@@ -102,14 +155,18 @@ func TestMatrix(t *testing.T) {
 	if _, skip := be.skip[wWrite]; !skip {
 		t.Error("rust-grpc must skip writes (no gRPC upload in the Rust SDK)")
 	}
+	if _, skip := be.skip[wAppend]; skip {
+		t.Error("rust-grpc must run appendable uploads")
+	}
 	for _, name := range []string{"go-json", "go-json-h1", "go-grpc", "rust-json"} {
 		b, err := lookupBackend(name)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, wl := range workloads {
-			if _, skip := b.skip[wl]; skip {
-				t.Errorf("%s must run %s", name, wl)
+			_, skip := b.skip[wl]
+			if want := wl == wAppend && b.transport != "grpc"; skip != want {
+				t.Errorf("%s: skips %s = %v, want %v", name, wl, skip, want)
 			}
 		}
 	}
@@ -191,7 +248,7 @@ func TestCaseJSONRoundTrip(t *testing.T) {
 				t.Fatal(err)
 			}
 			got, err := resolveCase("", string(b), "")
-			if err != nil || got != c {
+			if err != nil || !reflect.DeepEqual(got, c) {
 				t.Errorf("round trip of %s/%s: %+v, %v", profile, c.Name, got, err)
 			}
 		}

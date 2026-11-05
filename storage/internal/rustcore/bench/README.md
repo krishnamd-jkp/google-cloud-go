@@ -23,7 +23,7 @@ Nothing here has been run yet.
 | `go-grpc` | `NewGRPCClient()` | ReadObject | BidiWriteObject | v2 ListObjects |
 | `go-grpc-bidi` | `NewGRPCClient(WithGRPCBidiReads())` | BidiReadObject | (= go-grpc) | (= go-grpc) |
 | `rust-json` | `NewClient(experimental.WithRustCore())` | JSON, HTTP/1.1 | JSON | JSON (core's `storage.objects.list`) |
-| `rust-grpc` | `NewGRPCClient(experimental.WithRustCore())` | BidiReadObject | **JSON** (see gaps) | v2 ListObjects |
+| `rust-grpc` | `NewGRPCClient(experimental.WithRustCore())` | BidiReadObject | **JSON** (see gaps); appendable uploads to zonal buckets: BidiWriteObject | v2 ListObjects |
 
 `rustbench matrix` prints this matrix and the reason for every skipped pair. Pairs are skipped
 when they would repeat another backend's measurement exactly, or are impossible.
@@ -162,3 +162,31 @@ rustbench-report -vm-cpu cpu.json results.jsonl > report.md
 The report averages the samples that lie entirely inside each measured phase, and the idle samples
 before and after the run. On a large VM a single-stream workload barely moves this metric (one vCPU
 of 192 is 0.52 %), so compare the per-process CPU columns too.
+
+## SDK consolidation benchmark plan (profile `worklog`) and VM memory
+
+Profile `worklog` runs the benchmark plan of the SDK consolidation POCs, all over gRPC (CloudPath):
+
+| Case | One op | Workers, phase | Backends |
+|---|---|---|---|
+| `open`, `read50x2x4`, `read50x2x4-parallel`, `random8k` | as in profile `ssb` | 1, 240 s | `go-grpc-bidi`, `rust-grpc`; plus `go-grpc` (non-bidi reads, the baseline) except for `open` |
+| `bidiread-16MiB-c48` | the next 16 MiB range of the worker's own 200 MiB object (front to back, one range reader per range; the 8 MiB tail is skipped) | 48, 300 s | `go-grpc-bidi`, `rust-grpc` |
+| `bidiwrite-200MiB-c48` | an appendable upload of a new 200 MiB object to the zonal bucket (`-zonal-bucket`), finalized on `Close` | 48, 300 s | `go-grpc`, `rust-grpc` |
+| `list-objects-100` | one ListObjects RPC returning 100 objects | 1, 120 s | `go-grpc`, `rust-grpc` |
+| `list-buckets-100` | one ListBuckets RPC returning 100 buckets of `-project` | 1, 120 s | `go-grpc`, `rust-grpc` |
+
+The 48-worker cases give both gRPC clients a pool of 48 connections (`option.WithGRPCConnectionPool`),
+so that the connection count does not cap throughput. BidiWrite runs as appendable uploads to a zonal
+bucket because that is the Rust SDK's only gRPC upload. The project needs at least 100 buckets.
+
+```sh
+rustbench suite -profile worklog -bucket $BUCKET -zonal-bucket $ZONAL_BUCKET -project $PROJECT \
+  -prefix ffi-bench -rounds 2 -cooldown 60s -out results.jsonl
+```
+
+For the VM's memory, install the [Ops Agent](https://cloud.google.com/monitoring/agent/ops-agent) on
+the VM (it has no package for non-LTS Ubuntu releases; Debian 12 and 13 work), fetch
+`agent.googleapis.com/memory/percent_used` with the filter `metric.labels.state="used"` the same way as
+the CPU metric, and pass it with `-vm-mem mem.json`. The report shows the highest sample inside each
+measured phase. On a large VM it moves little (1 GiB of 708 GiB is 0.14 %), so compare the per-process
+peak RSS too.

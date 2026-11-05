@@ -16,7 +16,7 @@ package main
 
 // Datasets live under <prefix>/data/ and are shared by all backends and rounds:
 //
-//	<prefix>/data/read/<size>/<i>                read, range, open and strided sources (benchCase.sources() each)
+//	<prefix>/data/read/<size>/<i>                read, range, open, strided and chunked sources (benchCase.sources() each)
 //	<prefix>/data/list-<n>/<dir>/<i>             n empty objects spread over listDirs(n) directories
 //
 // Written objects go to <prefix>/write/... and are deleted by the process that wrote them.
@@ -66,7 +66,7 @@ func datasetPlan(prefix string, cases []benchCase) map[string]int64 {
 	plan := map[string]int64{}
 	for _, c := range cases {
 		switch c.Workload {
-		case wRead, wRange, wOpen, wStrided:
+		case wRead, wRange, wOpen, wStrided, wChunked:
 			for i := range c.sources() {
 				plan[readObjectName(prefix, c.Size, i)] = c.Size
 			}
