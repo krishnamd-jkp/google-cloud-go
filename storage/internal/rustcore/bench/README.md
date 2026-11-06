@@ -12,12 +12,15 @@ DirectPath, so every gRPC client runs on CloudPath.
   run the suite and fetch the results.
 - `../cmd/rapidbench` and `rapid/`: the SDK consolidation benchmark plan in the same form as the
   Java PoC's (one process per run, the same workloads, windows, output files and charts).
+- `../cmd/gpucopy`: reads object ranges into GPU-ready memory through the public API, with or
+  without a GPU ([`GPU_DIRECT_COPY.md`](GPU_DIRECT_COPY.md)).
 
 ## Results
 
 | Run | What |
 |---|---|
 | [`RESULTS.md`](RESULTS.md) (2026-11-05) | **current:** workloads 1–6 in the Java PoC's report format, each engine on its default settings (`rapidbench`), plus workloads 4 and 5 over Bidi with 192 gRPC connections on both engines (`run_matched.sh`) |
+| [`GPU_DIRECT_COPY.md`](GPU_DIRECT_COPY.md) (2026-11-05) | reading object data straight into GPU-ready (pinned) memory through the public API, on both engines, measured without a GPU (`gpucopy`) |
 | [`results/2026-11-03/REPORT.md`](results/2026-11-03/REPORT.md) | Open, Read50x2x4 and Random8K with one worker (`rustbench`, profile `ssb`) |
 | [`results/2026-11-04/REPORT.md`](results/2026-11-04/REPORT.md) | workloads 1–6 of the SDK consolidation plan, 48 connections for the 48-worker workloads (`rustbench`, profile `worklog`) |
 

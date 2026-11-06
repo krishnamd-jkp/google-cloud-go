@@ -1,0 +1,25 @@
+14:53:04 default: go json host 
+gpucopy: 14:53:04.508459 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:53:59.606258 go json host/sim x48: 18.82 Gb/s, 2.359 CPU-s/GiB (5.17 cores), read 342.5 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections, 0 Go GC cycles (0.00 CPU-s)
+14:54:04 default: go json pinned 
+gpucopy: 14:54:04.725131 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:55:00.049612 go json pinned/sim x48: 19.69 Gb/s, 2.489 CPU-s/GiB (5.71 cores), read 327.4 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections, 67 Go GC cycles (21.90 CPU-s)
+14:55:05 memlimit: go json pinned GOGC=off GOMEMLIMIT=2GiB
+gpucopy: 14:55:05.068696 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:56:00.341135 go json pinned/sim x48: 19.20 Gb/s, 2.314 CPU-s/GiB (5.17 cores), read 335.9 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections, 0 Go GC cycles (0.00 CPU-s)
+14:56:05 default: go bidi host 
+gpucopy: 14:56:05.400751 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:57:00.675763 go bidi host/sim x48: 7.82 Gb/s, 3.424 CPU-s/GiB (3.12 cores), read 834.0 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections, 0 Go GC cycles (0.00 CPU-s)
+14:57:05 default: go bidi pinned 
+gpucopy: 14:57:05.801494 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:58:01.221881 go bidi pinned/sim x48: 7.06 Gb/s, 3.680 CPU-s/GiB (3.02 cores), read 935.0 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections, 4 Go GC cycles (1.89 CPU-s)
+14:58:06 memlimit: go bidi pinned GOGC=off GOMEMLIMIT=2GiB
+gpucopy: 14:58:06.261255 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:59:01.694241 go bidi pinned/sim x48: 8.84 Gb/s, 3.566 CPU-s/GiB (3.67 cores), read 728.3 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections, 0 Go GC cycles (0.00 CPU-s)
+14:59:06 default: rust json host 
+gpucopy: 14:59:06.785425 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 15:00:01.888903 rust json host/sim x48: 18.83 Gb/s, 2.091 CPU-s/GiB (4.58 cores), read 342.2 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 50 connections, 0 Go GC cycles (0.00 CPU-s)
+15:00:06 default: rust json pinned 
+gpucopy: 15:00:06.994991 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 15:01:02.309535 rust json pinned/sim x48: 19.37 Gb/s, 2.168 CPU-s/GiB (4.89 cores), read 332.8 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections, 10 Go GC cycles (1.35 CPU-s)
+15:01:07 done

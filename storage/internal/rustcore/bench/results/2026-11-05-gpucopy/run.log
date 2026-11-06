@@ -1,0 +1,127 @@
+14:09:54 copycost
+gpucopy: 14:09:54.110258 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:10:04.142251 memcpy-heap       14.86 GB/s  0.0720 CPU-s/GiB
+gpucopy: 14:10:14.148745 memcpy-to-pinned  14.89 GB/s  0.0720 CPU-s/GiB
+gpucopy: 14:10:24.155636 uds-default        9.25 GB/s  0.2300 CPU-s/GiB
+gpucopy: 14:10:34.163861 uds-4mib           8.15 GB/s  0.2600 CPU-s/GiB
+14:10:34 verify go json pinned
+gpucopy: 14:10:34.187861 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:10:59.738098 go json pinned/sim x48: 14.75 Gb/s, 2.832 CPU-s/GiB (4.86 cores), read 435.1 ms + device copy 0.00 ms per 16 MiB range, 2619 verified (0 mismatches), 0 errors, 48 connections
+14:10:59 verify rust json pinned
+gpucopy: 14:10:59.778539 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:11:25.299069 rust json pinned/sim x48: 15.28 Gb/s, 2.391 CPU-s/GiB (4.25 cores), read 419.5 ms + device copy 0.00 ms per 16 MiB range, 2711 verified (0 mismatches), 0 errors, 49 connections
+14:11:25 verify go bidi pinned
+gpucopy: 14:11:25.354292 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:11:50.759578 go bidi pinned/sim x48: 9.07 Gb/s, 4.024 CPU-s/GiB (4.25 cores), read 712.1 ms + device copy 0.00 ms per 16 MiB range, 1592 verified (0 mismatches), 0 errors, 48 connections
+14:11:50 verify rust bidi pinned
+gpucopy: 14:11:50.844480 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:12:16.311727 rust bidi pinned/sim x48: 9.03 Gb/s, 2.837 CPU-s/GiB (2.98 cores), read 713.9 ms + device copy 0.00 ms per 16 MiB range, 1592 verified (0 mismatches), 0 errors, 49 connections
+14:12:16 round 1: go json host
+gpucopy: 14:12:16.399788 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:13:11.476399 go json host/sim x48: 17.23 Gb/s, 2.484 CPU-s/GiB (4.98 cores), read 374.6 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:13:16 round 1: rust json host
+gpucopy: 14:13:16.605633 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:14:11.832107 rust json host/sim x48: 17.67 Gb/s, 2.190 CPU-s/GiB (4.51 cores), read 365.0 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:14:16 round 1: go json pinned
+gpucopy: 14:14:16.949232 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:15:12.497229 go json pinned/sim x48: 18.04 Gb/s, 2.627 CPU-s/GiB (5.52 cores), read 357.4 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:15:17 round 1: rust json pinned
+gpucopy: 14:15:17.527753 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:16:13.037889 rust json pinned/sim x48: 18.04 Gb/s, 2.209 CPU-s/GiB (4.64 cores), read 357.4 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:16:18 round 1: go json pageable
+gpucopy: 14:16:18.108380 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:17:13.271040 go json pageable/sim x48: 19.01 Gb/s, 2.648 CPU-s/GiB (5.86 cores), read 335.4 ms + device copy 3.58 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:17:18 round 1: rust json pageable
+gpucopy: 14:17:18.387196 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:18:13.690128 rust json pageable/sim x48: 19.58 Gb/s, 2.399 CPU-s/GiB (5.47 cores), read 325.9 ms + device copy 3.27 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:18:18 round 1: go bidi host
+gpucopy: 14:18:18.808292 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:19:14.041370 go bidi host/sim x48: 9.26 Gb/s, 3.398 CPU-s/GiB (3.67 cores), read 693.9 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:19:19 round 1: rust bidi host
+gpucopy: 14:19:19.176313 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:20:14.409625 rust bidi host/sim x48: 9.24 Gb/s, 2.477 CPU-s/GiB (2.66 cores), read 697.9 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:20:19 round 1: go bidi pinned
+gpucopy: 14:20:19.532423 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:21:14.948499 go bidi pinned/sim x48: 9.33 Gb/s, 3.667 CPU-s/GiB (3.98 cores), read 687.2 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:21:20 round 1: rust bidi pinned
+gpucopy: 14:21:20.028971 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:22:15.481580 rust bidi pinned/sim x48: 9.22 Gb/s, 2.547 CPU-s/GiB (2.74 cores), read 697.5 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:22:20 round 1: go bidi pageable
+gpucopy: 14:22:20.569899 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:23:15.753120 go bidi pageable/sim x48: 9.58 Gb/s, 3.787 CPU-s/GiB (4.22 cores), read 669.5 ms + device copy 4.30 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:23:20 round 1: rust bidi pageable
+gpucopy: 14:23:20.893171 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:24:16.194482 rust bidi pageable/sim x48: 9.32 Gb/s, 2.809 CPU-s/GiB (3.05 cores), read 687.2 ms + device copy 3.94 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:24:21 round 2: go json pageable
+gpucopy: 14:24:21.344892 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:25:16.704013 go json pageable/sim x48: 19.27 Gb/s, 2.706 CPU-s/GiB (6.07 cores), read 331.2 ms + device copy 3.60 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:25:21 round 2: rust json pageable
+gpucopy: 14:25:21.840737 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:26:17.166334 rust json pageable/sim x48: 19.60 Gb/s, 2.394 CPU-s/GiB (5.46 cores), read 325.3 ms + device copy 3.73 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:26:22 round 2: go bidi host
+gpucopy: 14:26:22.292286 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:27:17.527762 go bidi host/sim x48: 9.42 Gb/s, 3.589 CPU-s/GiB (3.94 cores), read 683.1 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:27:22 round 2: rust bidi host
+gpucopy: 14:27:22.658997 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:28:17.892936 rust bidi host/sim x48: 9.73 Gb/s, 2.436 CPU-s/GiB (2.76 cores), read 662.9 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:28:23 round 2: go bidi pinned
+gpucopy: 14:28:23.052755 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:29:18.393684 go bidi pinned/sim x48: 9.77 Gb/s, 3.513 CPU-s/GiB (4.00 cores), read 658.6 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:29:23 round 2: rust bidi pinned
+gpucopy: 14:29:23.466349 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:30:18.892416 rust bidi pinned/sim x48: 9.66 Gb/s, 2.633 CPU-s/GiB (2.96 cores), read 667.3 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:30:23 round 2: go bidi pageable
+gpucopy: 14:30:23.982745 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:31:19.184343 go bidi pageable/sim x48: 9.46 Gb/s, 3.718 CPU-s/GiB (4.10 cores), read 678.2 ms + device copy 3.87 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:31:24 round 2: rust bidi pageable
+gpucopy: 14:31:24.352506 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:32:19.665396 rust bidi pageable/sim x48: 9.35 Gb/s, 2.799 CPU-s/GiB (3.05 cores), read 685.1 ms + device copy 3.70 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:32:24 round 2: go json host
+gpucopy: 14:32:24.814737 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:33:19.904229 go json host/sim x48: 17.62 Gb/s, 2.422 CPU-s/GiB (4.97 cores), read 365.9 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:33:25 round 2: rust json host
+gpucopy: 14:33:25.036897 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:34:20.136293 rust json host/sim x48: 18.97 Gb/s, 2.085 CPU-s/GiB (4.60 cores), read 339.8 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:34:25 round 2: go json pinned
+gpucopy: 14:34:25.247853 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:35:20.630036 go json pinned/sim x48: 18.30 Gb/s, 2.476 CPU-s/GiB (5.27 cores), read 352.2 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:35:25 round 2: rust json pinned
+gpucopy: 14:35:25.658535 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:36:21.131290 rust json pinned/sim x48: 19.24 Gb/s, 2.175 CPU-s/GiB (4.87 cores), read 335.1 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:36:26 round 3: go bidi pinned
+gpucopy: 14:36:26.193376 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:37:21.499175 go bidi pinned/sim x48: 8.61 Gb/s, 3.549 CPU-s/GiB (3.56 cores), read 743.5 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:37:26 round 3: rust bidi pinned
+gpucopy: 14:37:26.576241 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:38:22.152217 rust bidi pinned/sim x48: 7.72 Gb/s, 2.493 CPU-s/GiB (2.24 cores), read 833.7 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:38:27 round 3: go bidi pageable
+gpucopy: 14:38:27.262990 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:39:22.594731 go bidi pageable/sim x48: 7.98 Gb/s, 3.596 CPU-s/GiB (3.34 cores), read 802.4 ms + device copy 3.73 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:39:27 round 3: rust bidi pageable
+gpucopy: 14:39:27.754303 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:40:22.926314 rust bidi pageable/sim x48: 7.55 Gb/s, 2.322 CPU-s/GiB (2.04 cores), read 850.9 ms + device copy 2.87 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:40:28 round 3: go json host
+gpucopy: 14:40:28.057104 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:41:23.130987 go json host/sim x48: 13.51 Gb/s, 2.418 CPU-s/GiB (3.80 cores), read 477.1 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:41:28 round 3: rust json host
+gpucopy: 14:41:28.238856 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:42:23.348092 rust json host/sim x48: 13.46 Gb/s, 2.178 CPU-s/GiB (3.41 cores), read 480.1 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:42:28 round 3: go json pinned
+gpucopy: 14:42:28.457034 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:43:23.747832 go json pinned/sim x48: 16.48 Gb/s, 2.502 CPU-s/GiB (4.80 cores), read 391.2 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:43:28 round 3: rust json pinned
+gpucopy: 14:43:28.776592 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:44:24.129393 rust json pinned/sim x48: 17.31 Gb/s, 2.132 CPU-s/GiB (4.30 cores), read 372.2 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:44:29 round 3: go json pageable
+gpucopy: 14:44:29.187704 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:45:24.350654 go json pageable/sim x48: 17.78 Gb/s, 2.598 CPU-s/GiB (5.38 cores), read 359.3 ms + device copy 3.67 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:45:29 round 3: rust json pageable
+gpucopy: 14:45:29.473426 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:46:24.797267 rust json pageable/sim x48: 16.81 Gb/s, 2.362 CPU-s/GiB (4.62 cores), read 380.1 ms + device copy 3.47 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:46:29 round 3: go bidi host
+gpucopy: 14:46:29.935712 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:47:25.198703 go bidi host/sim x48: 9.20 Gb/s, 3.388 CPU-s/GiB (3.63 cores), read 698.7 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 48 connections
+14:47:30 round 3: rust bidi host
+gpucopy: 14:47:30.339225 device: sim (no GPU: pinned = mmap+mlock, pageable copy = memcpy to a pinned staging buffer, pinned copy = DMA, no CPU)
+gpucopy: 14:48:25.574245 rust bidi host/sim x48: 9.10 Gb/s, 2.468 CPU-s/GiB (2.62 cores), read 706.4 ms + device copy 0.00 ms per 16 MiB range, 0 verified (0 mismatches), 0 errors, 49 connections
+14:48:30 done
